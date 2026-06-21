@@ -42,7 +42,6 @@ class VerifyOTPSerializer(serializers.Serializer):
     otp_code = serializers.CharField(max_length=6)
     user_type = serializers.ChoiceField(choices=['jobseeker', 'recruiter'])
 
-
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User

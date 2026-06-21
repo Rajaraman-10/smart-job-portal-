@@ -1,6 +1,12 @@
 Django>=4.2,<5.0
 djangorestframework
+djangorestframework-simplejwt
 django-cors-headers
 mysqlclient
 python-dotenv
 twilio
+google-auth
+PyPDF2
+boto3
+django-storages
+whitenoise

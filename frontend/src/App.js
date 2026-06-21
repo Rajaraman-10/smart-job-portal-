@@ -5,14 +5,12 @@ import './App.css';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authToken, setAuthToken] = useState(null);
+  const [accessToken, setAccessToken] = useState(null);
+  const [refreshToken, setRefreshToken] = useState(null);
   const [userType, setUserType] = useState('jobseeker');
   const [currentUser, setCurrentUser] = useState(null);
   const [theme, setTheme] = useState('light');
-  const [showPayment, setShowPayment] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState(499);
-  const [isPremium, setIsPremium] = useState(false);
-  
+
   // Job and application state
   const [jobs, setJobs] = useState([]);
   const [filteredJobs, setFilteredJobs] = useState([]);
@@ -20,8 +18,6 @@ function App() {
   const [locationFilter, setLocationFilter] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Jobs');
   const [selectedJobId, setSelectedJobId] = useState(null);
-  const [resume, setResume] = useState('');
-  const [resumeFile, setResumeFile] = useState(null);
   const [applicantName, setApplicantName] = useState('');
   const [applicantEmail, setApplicantEmail] = useState('');
   const [coverLetter, setCoverLetter] = useState('');
@@ -36,13 +32,15 @@ function App() {
 
   // Check if user is already logged in on component mount
   useEffect(() => {
-    const savedToken = localStorage.getItem('authToken');
+    const savedAccessToken = localStorage.getItem('accessToken');
+    const savedRefreshToken = localStorage.getItem('refreshToken');
     const savedUserType = localStorage.getItem('userType');
     const savedUser = localStorage.getItem('user');
     const savedTheme = localStorage.getItem('theme');
     
-    if (savedToken && savedUserType && savedUser) {
-      setAuthToken(savedToken);
+    if (savedAccessToken && savedRefreshToken && savedUserType && savedUser) {
+      setAccessToken(savedAccessToken);
+      setRefreshToken(savedRefreshToken);
       setUserType(savedUserType);
       setCurrentUser(JSON.parse(savedUser));
       setIsAuthenticated(true);
@@ -51,8 +49,6 @@ function App() {
     if (savedTheme === 'dark' || savedTheme === 'light') {
       setTheme(savedTheme);
     }
-    const savedPremium = localStorage.getItem('isPremium');
-    if (savedPremium === 'true') setIsPremium(true);
   }, []);
 
   // Fetch data only when authenticated
@@ -63,40 +59,31 @@ function App() {
     }
   }, [isAuthenticated]);
 
-  const handleLoginSuccess = (token, userType) => {
-    setAuthToken(token);
+  const handleLoginSuccess = (token, refresh, userType, user) => {
+    setAccessToken(token);
+    setRefreshToken(refresh);
     setUserType(userType);
+    setCurrentUser(user || null);
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('authToken');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('userType');
     localStorage.removeItem('user');
-    setAuthToken(null);
+    setAccessToken(null);
+    setRefreshToken(null);
     setUserType('jobseeker');
     setCurrentUser(null);
     setIsAuthenticated(false);
+    setAnalyticsData(null);
   };
 
   const toggleTheme = () => {
     const nextTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(nextTheme);
     localStorage.setItem('theme', nextTheme);
-  };
-
-  const openPayment = (amount = 499) => {
-    setPaymentAmount(amount);
-    setShowPayment(true);
-  };
-
-  const verifyPayment = () => {
-    // In a real app you'd verify server-side. Here we simulate success.
-    localStorage.setItem('isPremium', 'true');
-    setIsPremium(true);
-    setShowPayment(false);
-    setMessage('✅ VIP Premium activated. You can now apply to more jobs.');
-    setTimeout(() => setMessage(''), 4000);
   };
 
   const refreshApplications_func = () => {
@@ -131,14 +118,6 @@ function App() {
   const recruiterApplications = applications.filter((application) =>
     recruiterJobs.some((job) => job.id === application.job)
   );
-
-  const apiRoot = API_BASE_URL.replace(/\/api\/?$/, '');
-  const getResumeUrl = (resumePath) => {
-    if (!resumePath) return null;
-    if (resumePath.startsWith('http')) return resumePath;
-    if (resumePath.startsWith('/')) return `${apiRoot}${resumePath}`;
-    return `${apiRoot}/${resumePath}`;
-  };
 
   const applicationsByJob = recruiterJobs.reduce((acc, job) => {
     acc[job.id] = { job, applications: [] };
@@ -196,27 +175,14 @@ function App() {
       return;
     }
 
-    let payload;
-    if (resumeFile) {
-      payload = new FormData();
-      payload.append('job', jobId);
-      payload.append('applicant', 1);
-      payload.append('applicant_name', applicantName.trim());
-      payload.append('applicant_email', applicantEmail.trim());
-      payload.append('resume_file', resumeFile);
-      payload.append('cover_letter', coverLetter);
-      payload.append('status', 'Pending');
-    } else {
-      payload = {
-        job: jobId,
-        applicant: 1,
-        applicant_name: applicantName.trim(),
-        applicant_email: applicantEmail.trim(),
-        resume,
-        cover_letter: coverLetter,
-        status: 'Pending',
-      };
-    }
+    const payload = {
+      job: jobId,
+      applicant: 1,
+      applicant_name: applicantName.trim(),
+      applicant_email: applicantEmail.trim(),
+      cover_letter: coverLetter,
+      status: 'Pending',
+    };
     try {
       await createApplication(payload);
       refreshApplications_func();
@@ -224,9 +190,7 @@ function App() {
       setSelectedJobId(null);
       setApplicantName('');
       setApplicantEmail('');
-      setResume('');
       setCoverLetter('');
-      setResumeFile(null);
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
       setMessage(`❌ ${error.message}`);
@@ -311,14 +275,7 @@ function App() {
               <h1>Find Your Dream Job</h1>
               <p>Search and apply to thousands of jobs from top companies</p>
                 <div className="hero-banner">
-                  <div className="banner-left">
-                    <div className="banner-badge">vipseekers Pro</div>
-                    <div className="banner-text">Access verified candidates and priority listings — upgrade to VIP Premium to apply to more jobs.</div>
-                  </div>
-                  <div className="banner-cta">
-                    <button className="banner-btn" onClick={() => openPayment(499)}>Buy VIP - ₹499</button>
-                  </div>
-                </div>
+                    </div>
               <div className="search-box">
                 <div className="search-input-group">
                   <input
@@ -345,27 +302,6 @@ function App() {
               </div>
             </div>
           </section>
-          {showPayment && (
-            <section className="payment-page">
-              <div className="payment-panel">
-                <h2>VIP Premium Purchase</h2>
-                <p>Amount: ₹{paymentAmount}</p>
-                <p>Merchant UPI ID: <strong>sriramv004@oksbi</strong></p>
-                <div className="qr-wrap">
-                  {/* UPI URI and Google Chart QR */}
-                  <img
-                    alt="UPI QR"
-                    src={`https://chart.googleapis.com/chart?cht=qr&chs=300x300&chl=${encodeURIComponent(`upi://pay?pa=sriramv004@oksbi&pn=vipseekers&am=${paymentAmount}&tn=VIP%20Premium`)}`}
-                  />
-                </div>
-                <div className="payment-actions">
-                  <button className="banner-btn" onClick={() => navigator.clipboard && navigator.clipboard.writeText('sriramv004@oksbi')}>Copy UPI ID</button>
-                  <button className="banner-btn" onClick={verifyPayment}>I paid — Verify</button>
-                  <button className="banner-btn" onClick={() => setShowPayment(false)}>Cancel</button>
-                </div>
-              </div>
-            </section>
-          )}
 
           <section className="jobs-layout">
             <aside className="sidebar">
@@ -453,8 +389,13 @@ function App() {
             >
               Applications
             </button>
+            <button
+              className={recruiterPage === 'analytics' ? 'page-btn active' : 'page-btn'}
+              onClick={() => setRecruiterPage('analytics')}
+            >
+              Dashboard
+            </button>
           </div>
-
           {recruiterPage === 'postJob' ? (
             <section className="post-job-section">
               <div className="post-job-container">
@@ -515,7 +456,7 @@ function App() {
                 </form>
               </div>
             </section>
-          ) : (
+          ) : recruiterPage === 'applications' ? (
             <section className="applications-page">
               <div className="dashboard-header">
                 <h2>Applications Received</h2>
@@ -596,7 +537,32 @@ function App() {
                 )}
               </div>
             </section>
-          )}
+          ) : recruiterPage === 'analytics' ? (
+            <section className="analytics-page">
+              <div className="analytics-card-grid">
+                <div className="analytics-card">
+                  <h3>Total Jobs</h3>
+                  <p>{analyticsData?.job_count ?? '—'}</p>
+                </div>
+                <div className="analytics-card">
+                  <h3>Total Applications</h3>
+                  <p>{analyticsData?.application_count ?? '—'}</p>
+                </div>
+                <div className="analytics-card">
+                  <h3>Active Users</h3>
+                  <p>{analyticsData?.user_count ?? '—'}</p>
+                </div>
+                <div className="analytics-card">
+                  <h3>Pending Applications</h3>
+                  <p>{analyticsData?.pending_applications ?? '—'}</p>
+                </div>
+                <div className="analytics-card">
+                  <h3>Approved Applications</h3>
+                  <p>{analyticsData?.approved_applications ?? '—'}</p>
+                </div>
+              </div>
+            </section>
+          ) : null}
         </div>
       )}
 

@@ -1,16 +1,20 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.views import APIView
-from rest_framework.authtoken.models import Token
-from django.core.mail import send_mail
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth.models import User
-from .models import Job, Application
-from .serializers import JobSerializer, ApplicationSerializer, UserSerializer, SendOTPSerializer, VerifyOTPSerializer
-from .models import OTP
+from .models import Job, Application, OTP
+from .serializers import (
+    JobSerializer,
+    ApplicationSerializer,
+    UserSerializer,
+    SendOTPSerializer,
+    VerifyOTPSerializer,
+)
 import random
 import string
 try:
@@ -19,70 +23,45 @@ try:
 except Exception:
     TWILIO_AVAILABLE = False
 
+
+def get_tokens_for_user(user):
+    refresh = RefreshToken.for_user(user)
+    return {
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+    }
+
 class JobViewSet(viewsets.ModelViewSet):
     queryset = Job.objects.all().order_by('-posted_at')
     serializer_class = JobSerializer
-    permission_classes = [AllowAny]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticatedOrReadOnly]
 
     def perform_create(self, serializer):
-        from django.contrib.auth.models import User
-        user, _ = User.objects.get_or_create(username='recruiter1')
-        serializer.save(recruiter=user)
+        if self.request.user.is_authenticated:
+            serializer.save(recruiter=self.request.user)
+        else:
+            raise PermissionError('Authentication required to post jobs')
 
 class ApplicationViewSet(viewsets.ModelViewSet):
     queryset = Application.objects.all().order_by('-applied_at')
     serializer_class = ApplicationSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
 
     def perform_create(self, serializer):
-        from django.contrib.auth.models import User
-        applicant_user, _ = User.objects.get_or_create(username='applicant1')
+        applicant_user = self.request.user
         applicant_name = serializer.validated_data.get('applicant_name') or applicant_user.username
         applicant_email = serializer.validated_data.get('applicant_email', '')
-        serializer.save(applicant=applicant_user, applicant_name=applicant_name, applicant_email=applicant_email)
 
-    def perform_update(self, serializer):
-        old_status = self.get_object().status
-        new_status = serializer.validated_data.get('status', old_status)
-        instance = serializer.save()
-
-        if old_status != 'Approved' and new_status == 'Approved' and instance.applicant_email:
-            self._send_approval_email(instance)
-
-    def _send_approval_email(self, application):
-        try:
-            subject = f"Interview Selected - {application.job.title} at {application.job.company}"
-            message = f"""
-Dear {application.applicant_name},
-
-Congratulations! We are pleased to inform you that you have been selected for an interview for the position of {application.job.title} at {application.job.company}.
-
-We will contact you soon with interview details.
-
-Best regards,
-{application.job.company}
-            """
-            print(f"\n{'='*60}")
-            print(f"EMAIL TO BE SENT")
-            print(f"{'='*60}")
-            print(f"TO: {application.applicant_email}")
-            print(f"SUBJECT: {subject}")
-            print(f"MESSAGE:\n{message}")
-            print(f"{'='*60}\n")
-            
-            result = send_mail(
-                subject,
-                message,
-                settings.DEFAULT_FROM_EMAIL,
-                [application.applicant_email],
-                fail_silently=False,
-            )
-            print(f"Email sent successfully! Result: {result}")
-        except Exception as e:
-            print(f"Error sending email: {e}")
+        application = serializer.save(
+            applicant=applicant_user,
+            applicant_name=applicant_name,
+            applicant_email=applicant_email,
+        )
+        return application
 
 
- 
 
 
 class SendOTPView(APIView):
@@ -165,8 +144,8 @@ class VerifyOTPView(APIView):
                 )
                 otp.is_verified = True
                 otp.save()
-                token, _ = Token.objects.get_or_create(user=user)
-                return Response({'message': 'Login successful', 'token': token.key, 'user': UserSerializer(user).data, 'user_type': user_type}, status=status.HTTP_200_OK)
+                tokens = get_tokens_for_user(user)
+                return Response({'message': 'Login successful', 'access': tokens['access'], 'refresh': tokens['refresh'], 'user': UserSerializer(user).data, 'user_type': user_type}, status=status.HTTP_200_OK)
             except OTP.DoesNotExist:
                 return Response({'error': 'OTP not found. Please request a new one.'}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -1,6 +1,9 @@
 export const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://127.0.0.1:8000/api';
 
-/* Google login removed — phone OTP only */
+const authHeaders = () => {
+  const token = localStorage.getItem('accessToken');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 export async function sendOTP(mobileNumber) {
   const response = await fetch(`${API_BASE_URL}/auth/send-otp/`, {
@@ -39,7 +42,12 @@ export async function verifyOTP(mobileNumber, otpCode, userType) {
 }
 
 export async function fetchJobs() {
-  const response = await fetch(`${API_BASE_URL}/jobs/`);
+  const response = await fetch(`${API_BASE_URL}/jobs/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
   if (!response.ok) {
     throw new Error('Failed to load jobs');
   }
@@ -47,9 +55,27 @@ export async function fetchJobs() {
 }
 
 export async function fetchApplications() {
-  const response = await fetch(`${API_BASE_URL}/applications/`);
+  const response = await fetch(`${API_BASE_URL}/applications/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
   if (!response.ok) {
     throw new Error('Failed to load applications');
+  }
+  return response.json();
+}
+
+export async function fetchAnalytics() {
+  const response = await fetch(`${API_BASE_URL}/analytics/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load analytics');
   }
   return response.json();
 }
@@ -59,6 +85,7 @@ export async function createJob(jobData) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders(),
     },
     body: JSON.stringify(jobData),
   });
@@ -70,13 +97,15 @@ export async function createJob(jobData) {
 
 export async function createApplication(application) {
   const isFormData = application instanceof FormData;
+  const headers = isFormData
+    ? { ...authHeaders() }
+    : {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+      };
   const response = await fetch(`${API_BASE_URL}/applications/`, {
     method: 'POST',
-    headers: isFormData
-      ? {}
-      : {
-          'Content-Type': 'application/json',
-        },
+    headers,
     body: isFormData ? application : JSON.stringify(application),
   });
   if (!response.ok) {
@@ -97,6 +126,7 @@ export async function updateApplication(applicationId, data) {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders(),
     },
     body: JSON.stringify(data),
   });

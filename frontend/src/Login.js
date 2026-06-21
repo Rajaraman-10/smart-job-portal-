@@ -37,17 +37,19 @@ function Login({ onLoginSuccess }) {
     setLoading(true);
     try {
       const res = await verifyOTP(mobileNumber, otp, userType);
-      localStorage.setItem('authToken', res.token);
+      localStorage.setItem('accessToken', res.access);
+      localStorage.setItem('refreshToken', res.refresh);
       localStorage.setItem('userType', res.user_type);
       localStorage.setItem('user', JSON.stringify(res.user));
       setMessage('✅ Login successful!');
-      onLoginSuccess(res.token, res.user_type);
+      onLoginSuccess(res.access, res.refresh, res.user_type, res.user);
     } catch (err) {
       setError(`❌ ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="login-container">
@@ -56,7 +58,7 @@ function Login({ onLoginSuccess }) {
           <span className="logo-icon">⭐</span>
           vipseekers
         </h1>
-        <h2>Login with Phone</h2>
+        <h2>Login with Phone or Google</h2>
 
         {error && <div className="error-message">{error}</div>}
         {message && <div className="success-message">{message}</div>}
