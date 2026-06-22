@@ -28,6 +28,8 @@ function App() {
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [applicantName, setApplicantName] = useState('');
   const [applicantEmail, setApplicantEmail] = useState('');
+  const [resume, setResume] = useState('');
+  const [resumeFile, setResumeFile] = useState(null);
   const [coverLetter, setCoverLetter] = useState('');
   const [message, setMessage] = useState('');
   const [recruiterPage, setRecruiterPage] = useState('postJob');
@@ -362,18 +364,10 @@ function App() {
                         <div className="job-footer">
                         <button
                               className="apply-btn"
-                              onClick={() => {
-                                if (!isPremium) {
-                                  setMessage('🔒 Upgrade to VIP Premium to apply. Redirecting to payment...');
-                                  setTimeout(() => openPayment(499), 700);
-                                  return;
-                                }
-                                setSelectedJobId(job.id);
-                              }}
+                              onClick={() => setSelectedJobId(job.id)}
                             >
                               Apply Now
                             </button>
-                        <div className="apply-note">Limited free applies — upgrade to <strong>VIP Premium</strong> to apply to more jobs.</div>
                         </div>
                       </div>
                     ))}
