@@ -4,6 +4,14 @@ import Login from './Login';
 import './App.css';
 
 function App() {
+  // Helper function to construct resume URL
+  const getResumeUrl = (resumePath) => {
+    if (!resumePath) return '';
+    if (resumePath.startsWith('http')) return resumePath;
+    const baseUrl = API_BASE_URL.replace('/api', '');
+    return `${baseUrl}/media/${resumePath}`;
+  };
+
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [accessToken, setAccessToken] = useState(null);
   const [refreshToken, setRefreshToken] = useState(null);
