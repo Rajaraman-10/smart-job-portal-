@@ -27,11 +27,27 @@ def get_tokens_for_user(user, user_type='jobseeker'):
         'user': UserSerializer(user).data,
     }
 
+
+class IsRecruiterOrReadOnly(IsAuthenticatedOrReadOnly):
+    """
+    Custom permission to allow only the recruiter who posted a job to edit/delete it.
+    """
+    def has_object_permission(self, request, view, obj):
+        # Read permissions are allowed to any request
+        if request.method in ['GET', 'HEAD', 'OPTIONS']:
+            return True
+        
+        # Write permissions are only allowed to the recruiter who posted the job
+        if isinstance(obj, Job):
+            return obj.recruiter == request.user
+        return False
+
+
 class JobViewSet(viewsets.ModelViewSet):
     queryset = Job.objects.all().order_by('-posted_at')
     serializer_class = JobSerializer
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticatedOrReadOnly]
+    permission_classes = [IsRecruiterOrReadOnly]
 
     def perform_create(self, serializer):
         if self.request.user.is_authenticated:
@@ -40,10 +56,29 @@ class JobViewSet(viewsets.ModelViewSet):
             raise PermissionError('Authentication required to post jobs')
 
 class ApplicationViewSet(viewsets.ModelViewSet):
-    queryset = Application.objects.all().order_by('-applied_at')
     serializer_class = ApplicationSerializer
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
+
+    def get_queryset(self):
+        """
+        Filter applications based on user role:
+        - Recruiters: See applications for jobs they posted
+        - Job Seekers: See their own applications
+        """
+        user = self.request.user
+        user_type = user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+        
+        if user_type == 'recruiter':
+            # Recruiters see applications for jobs they posted
+            return Application.objects.filter(
+                job__recruiter=user
+            ).order_by('-applied_at')
+        else:
+            # Job seekers see only their own applications
+            return Application.objects.filter(
+                applicant=user
+            ).order_by('-applied_at')
 
     def perform_create(self, serializer):
         applicant_user = self.request.user

@@ -6,6 +6,7 @@ class JobSerializer(serializers.ModelSerializer):
     class Meta:
         model = Job
         fields = '__all__'
+        read_only_fields = ['recruiter', 'posted_at']
 
 class ApplicationSerializer(serializers.ModelSerializer):
     job_title = serializers.CharField(source='job.title', read_only=True)
@@ -30,7 +31,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'status',
             'applied_at',
         ]
-        read_only_fields = ['job_title', 'job_company']
+        read_only_fields = ['job_title', 'job_company', 'applicant']
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -49,7 +50,8 @@ class RegisterSerializer(serializers.Serializer):
             username=validated_data['email'],
             email=validated_data['email'],
             password=validated_data['password'],
-            first_name=validated_data['name']
+            first_name=validated_data['name'],
+            last_name=validated_data.get('user_type', 'jobseeker')  # Store user_type in last_name
         )
         return user
 
