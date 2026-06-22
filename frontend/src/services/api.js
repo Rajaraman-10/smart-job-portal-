@@ -1,42 +1,42 @@
-export const API_BASE_URL = 'https://smart-job-portal-2jkd.onrender.com';
+export const API_BASE_URL = 'https://smart-job-portal-2jkd.onrender.com/api';
 
 const authHeaders = () => {
   const token = localStorage.getItem('accessToken');
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-export async function sendOTP(mobileNumber) {
-  const response = await fetch(`${API_BASE_URL}/auth/send-otp/`, {
+export async function register(name, email, password, userType) {
+  const response = await fetch(`${API_BASE_URL}/auth/register/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mobile_number: mobileNumber }),
+    body: JSON.stringify({ name, email, password, user_type: userType }),
   });
   const contentType = response.headers.get('content-type') || '';
   if (!response.ok) {
     if (contentType.includes('application/json')) {
       const data = await response.json();
-      throw new Error(data.error || 'Failed to send OTP');
+      throw new Error(data.error || data.detail || 'Registration failed');
     }
     const text = await response.text();
-    throw new Error(text || 'Failed to send OTP');
+    throw new Error(text || 'Registration failed');
   }
   return contentType.includes('application/json') ? response.json() : { message: await response.text() };
 }
 
-export async function verifyOTP(mobileNumber, otpCode, userType) {
-  const response = await fetch(`${API_BASE_URL}/auth/verify-otp/`, {
+export async function login(email, password) {
+  const response = await fetch(`${API_BASE_URL}/auth/login/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mobile_number: mobileNumber, otp_code: otpCode, user_type: userType }),
+    body: JSON.stringify({ email, password }),
   });
   const contentType = response.headers.get('content-type') || '';
   if (!response.ok) {
     if (contentType.includes('application/json')) {
       const data = await response.json();
-      throw new Error(data.error || 'Failed to verify OTP');
+      throw new Error(data.error || data.detail || 'Login failed');
     }
     const text = await response.text();
-    throw new Error(text || 'Failed to verify OTP');
+    throw new Error(text || 'Login failed');
   }
   return contentType.includes('application/json') ? response.json() : { message: await response.text() };
 }

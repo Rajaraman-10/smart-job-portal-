@@ -33,14 +33,31 @@ class ApplicationSerializer(serializers.ModelSerializer):
         read_only_fields = ['job_title', 'job_company']
 
 
-class SendOTPSerializer(serializers.Serializer):
-    mobile_number = serializers.CharField(max_length=15)
-
-
-class VerifyOTPSerializer(serializers.Serializer):
-    mobile_number = serializers.CharField(max_length=15)
-    otp_code = serializers.CharField(max_length=6)
+class RegisterSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=150)
+    email = serializers.EmailField()
+    password = serializers.CharField(min_length=6, write_only=True)
     user_type = serializers.ChoiceField(choices=['jobseeker', 'recruiter'])
+
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Email already registered")
+        return value
+
+    def create(self, validated_data):
+        user = User.objects.create_user(
+            username=validated_data['email'],
+            email=validated_data['email'],
+            password=validated_data['password'],
+            first_name=validated_data['name']
+        )
+        return user
+
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:

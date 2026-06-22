@@ -1,28 +1,42 @@
 import React, { useState } from 'react';
-import { sendOTP, verifyOTP } from './services/api';
+import { register, login } from './services/api';
 import './Login.css';
 
 function Login({ onLoginSuccess }) {
+  const [isRegister, setIsRegister] = useState(false);
   const [userType, setUserType] = useState('jobseeker');
-  const [mobileNumber, setMobileNumber] = useState('');
-  const [otp, setOtp] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [returnedOtp, setReturnedOtp] = useState('');
 
-  const handleSendOTP = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
-    setReturnedOtp('');
+    
+    if (password !== confirmPassword) {
+      setError('❌ Passwords do not match');
+      return;
+    }
+    
+    if (password.length < 6) {
+      setError('❌ Password must be at least 6 characters');
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await sendOTP(mobileNumber);
-      const code = res.otp_code || '';
-      setReturnedOtp(code);
-      setOtp(code);
-      setMessage('✅ OTP generated successfully. It has been filled in below.');
+      const res = await register(name, email, password, userType);
+      setMessage('✅ Registration successful! Please log in.');
+      setIsRegister(false);
+      setName('');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
     } catch (err) {
       setError(`❌ ${err.message}`);
     } finally {
@@ -30,13 +44,13 @@ function Login({ onLoginSuccess }) {
     }
   };
 
-  const handleVerifyOTP = async (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
     setLoading(true);
     try {
-      const res = await verifyOTP(mobileNumber, otp, userType);
+      const res = await login(email, password);
       localStorage.setItem('accessToken', res.access);
       localStorage.setItem('refreshToken', res.refresh);
       localStorage.setItem('userType', res.user_type);
@@ -50,7 +64,6 @@ function Login({ onLoginSuccess }) {
     }
   };
 
-
   return (
     <div className="login-container">
       <div className="login-box">
@@ -58,43 +71,122 @@ function Login({ onLoginSuccess }) {
           <span className="logo-icon">⭐</span>
           vipseekers
         </h1>
-        <h2>Login with Phone or Google</h2>
+        <h2>{isRegister ? 'Create Account' : 'Login'}</h2>
 
         {error && <div className="error-message">{error}</div>}
         {message && <div className="success-message">{message}</div>}
-        {returnedOtp && (
-          <div className="success-message">
-            <strong>OTP:</strong> {returnedOtp}
-          </div>
+
+        {isRegister ? (
+          <form onSubmit={handleRegister}>
+            <div className="form-group">
+              <label htmlFor="name">Full Name:</label>
+              <input 
+                id="name" 
+                type="text" 
+                placeholder="Enter your full name" 
+                value={name} 
+                onChange={(e) => setName(e.target.value)} 
+                disabled={loading} 
+                required 
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="email">Email:</label>
+              <input 
+                id="email" 
+                type="email" 
+                placeholder="Enter your email" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                disabled={loading} 
+                required 
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="userType">I am a:</label>
+              <select 
+                id="userType" 
+                value={userType} 
+                onChange={(e) => setUserType(e.target.value)} 
+                disabled={loading}
+              >
+                <option value="jobseeker">Job Seeker</option>
+                <option value="recruiter">Recruiter</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="password">Password:</label>
+              <input 
+                id="password" 
+                type="password" 
+                placeholder="Enter password (min 6 characters)" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                disabled={loading} 
+                required 
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="confirmPassword">Confirm Password:</label>
+              <input 
+                id="confirmPassword" 
+                type="password" 
+                placeholder="Confirm password" 
+                value={confirmPassword} 
+                onChange={(e) => setConfirmPassword(e.target.value)} 
+                disabled={loading} 
+                required 
+              />
+            </div>
+
+            <button type="submit" disabled={loading}>{loading ? 'Registering...' : 'Register'}</button>
+            
+            <p className="toggle-auth">
+              Already have an account? <button type="button" onClick={() => { setIsRegister(false); setError(''); setMessage(''); }} disabled={loading}>Login</button>
+            </p>
+          </form>
+        ) : (
+          <form onSubmit={handleLogin}>
+            <div className="form-group">
+              <label htmlFor="email">Email:</label>
+              <input 
+                id="email" 
+                type="email" 
+                placeholder="Enter your email" 
+                value={email} 
+                onChange={(e) => setEmail(e.target.value)} 
+                disabled={loading} 
+                required 
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="password">Password:</label>
+              <input 
+                id="password" 
+                type="password" 
+                placeholder="Enter password" 
+                value={password} 
+                onChange={(e) => setPassword(e.target.value)} 
+                disabled={loading} 
+                required 
+              />
+            </div>
+
+            <button type="submit" disabled={loading}>{loading ? 'Logging in...' : 'Login'}</button>
+            
+            <p className="toggle-auth">
+              Don't have an account? <button type="button" onClick={() => { setIsRegister(true); setError(''); setMessage(''); setEmail(''); setPassword(''); }} disabled={loading}>Register</button>
+            </p>
+          </form>
         )}
 
-        <form onSubmit={handleSendOTP}>
-          <div className="form-group">
-            <label htmlFor="userType">I am a:</label>
-            <select id="userType" value={userType} onChange={(e) => setUserType(e.target.value)} disabled={loading}>
-              <option value="jobseeker">Job Seeker</option>
-              <option value="recruiter">Recruiter</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="mobile">Mobile Number:</label>
-            <input id="mobile" type="tel" placeholder="Enter your 10-digit mobile number" value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value)} disabled={loading} pattern="[0-9]{10}" required />
-          </div>
-
-          <button type="submit" disabled={loading}>{loading ? 'Sending...' : 'Send OTP'}</button>
-        </form>
-
-        <form onSubmit={handleVerifyOTP}>
-          <div className="form-group">
-            <label htmlFor="otp">Enter OTP:</label>
-            <input id="otp" type="text" placeholder="Enter 6-digit OTP" value={otp} onChange={(e) => setOtp(e.target.value)} disabled={loading} maxLength="6" pattern="[0-9]{6}" required />
-          </div>
-          <button type="submit" disabled={loading}>{loading ? 'Verifying...' : 'Verify & Login'}</button>
-        </form>
-
         <div className="login-footer">
-          <p>For development: if SMS not configured OTP will appear in server logs.</p>
+          <p>Email + Password Login | No OTP needed</p>
         </div>
       </div>
     </div>

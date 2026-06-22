@@ -3,8 +3,8 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     JobViewSet,
     ApplicationViewSet,
-    SendOTPView,
-    VerifyOTPView,
+    RegisterView,
+    LoginView,
 )
 
 router = DefaultRouter()
@@ -13,6 +13,6 @@ router.register(r'applications', ApplicationViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('auth/send-otp/', SendOTPView.as_view(), name='send-otp'),
-    path('auth/verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
+    path('auth/register/', RegisterView.as_view(), name='register'),
+    path('auth/login/', LoginView.as_view(), name='login'),
 ]
