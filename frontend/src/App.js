@@ -29,6 +29,7 @@ function App() {
   const [jobCompany, setJobCompany] = useState('');
   const [jobSalary, setJobSalary] = useState('');
   const [applications, setApplications] = useState([]);
+  const [analyticsData, setAnalyticsData] = useState(null);
 
   // Check if user is already logged in on component mount
   useEffect(() => {
