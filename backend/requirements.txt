@@ -10,3 +10,4 @@ PyPDF2
 boto3
 django-storages
 whitenoise
+gunicorn
