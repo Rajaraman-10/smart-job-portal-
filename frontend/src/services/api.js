@@ -1,4 +1,19 @@
-export const API_BASE_URL = 'https://smart-job-portal-2jkd.onrender.com/api';
+const getApiBaseUrl = () => {
+  if (process.env.REACT_APP_API_BASE_URL) {
+    return process.env.REACT_APP_API_BASE_URL.replace(/\/$/, '');
+  }
+
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return 'http://127.0.0.1:8000/api';
+    }
+  }
+
+  return 'https://smart-job-portal-2jkd.onrender.com/api';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 const authHeaders = () => {
   const token = localStorage.getItem('accessToken');
@@ -67,6 +82,19 @@ export async function fetchApplications() {
   return response.json();
 }
 
+export async function fetchApplicationsGroupedByJob() {
+  const response = await fetch(`${API_BASE_URL}/applications/grouped-by-job/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load applications grouped by job');
+  }
+  return response.json();
+}
+
 export async function fetchAnalytics() {
   const response = await fetch(`${API_BASE_URL}/analytics/`, {
     headers: {
@@ -90,7 +118,22 @@ export async function createJob(jobData) {
     body: JSON.stringify(jobData),
   });
   if (!response.ok) {
-    throw new Error('Failed to post job');
+    let errorMsg = 'Failed to post job';
+    if (response.status === 401 || response.status === 403) {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('userType');
+      localStorage.removeItem('user');
+      errorMsg = 'Your session expired. Please log in again as a recruiter.';
+    } else {
+      try {
+        const errorData = await response.json();
+        errorMsg = errorData.detail || errorData.error || JSON.stringify(errorData);
+      } catch (e) {
+        errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+      }
+    }
+    throw new Error(errorMsg);
   }
   return response.json();
 }
@@ -117,6 +160,19 @@ export async function createApplication(application) {
       errorMsg = `HTTP ${response.status}: ${response.statusText}`;
     }
     throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
+export async function fetchApplicationDetail(applicationId) {
+  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load application details');
   }
   return response.json();
 }

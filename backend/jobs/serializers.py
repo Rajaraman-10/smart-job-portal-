@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Job, Application
 from django.contrib.auth.models import User
+from django.db.models import Q
 
 class JobSerializer(serializers.ModelSerializer):
     class Meta:
@@ -30,6 +31,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'cover_letter',
             'status',
             'applied_at',
+            'viewed_at',
         ]
         read_only_fields = ['job_title', 'job_company', 'applicant']
 
@@ -41,14 +43,16 @@ class RegisterSerializer(serializers.Serializer):
     user_type = serializers.ChoiceField(choices=['jobseeker', 'recruiter'])
 
     def validate_email(self, value):
-        if User.objects.filter(email=value).exists():
+        normalized_email = value.strip().lower()
+        if User.objects.filter(Q(email__iexact=normalized_email) | Q(username__iexact=normalized_email)).exists():
             raise serializers.ValidationError("Email already registered")
-        return value
+        return normalized_email
 
     def create(self, validated_data):
+        normalized_email = validated_data['email'].strip().lower()
         user = User.objects.create_user(
-            username=validated_data['email'],
-            email=validated_data['email'],
+            username=normalized_email,
+            email=normalized_email,
             password=validated_data['password'],
             first_name=validated_data['name'],
             last_name=validated_data.get('user_type', 'jobseeker')  # Store user_type in last_name

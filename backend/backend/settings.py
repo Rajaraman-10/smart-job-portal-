@@ -128,8 +128,12 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
     'https://smart-job-portal-rosy.vercel.app',
+    'https://smart-job-portal-2jkd.onrender.com',
 ]
 
+# Allow browser access from deployed external hosts.
+# If you want to lock this down, replace this with only your frontend origin(s).
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 # Email Configuration (Console backend for development)

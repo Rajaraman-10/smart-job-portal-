@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { API_BASE_URL, fetchJobs, fetchApplications, createApplication, updateApplication, createJob } from './services/api';
+import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, createJob } from './services/api';
 import Login from './Login';
+import MyApplicationsModule from './MyApplicationsModule';
 import './App.css';
 
 function App() {
@@ -32,6 +33,9 @@ function App() {
   const [resumeFile, setResumeFile] = useState(null);
   const [coverLetter, setCoverLetter] = useState('');
   const [message, setMessage] = useState('');
+  const [showMyApplications, setShowMyApplications] = useState(true);
+  const [applicationsView, setApplicationsView] = useState('all');
+  const [applicationsSearch, setApplicationsSearch] = useState('');
   const [recruiterPage, setRecruiterPage] = useState('postJob');
   const [jobTitle, setJobTitle] = useState('');
   const [jobDescription, setJobDescription] = useState('');
@@ -39,7 +43,28 @@ function App() {
   const [jobCompany, setJobCompany] = useState('');
   const [jobSalary, setJobSalary] = useState('');
   const [applications, setApplications] = useState([]);
+  const [groupedApplications, setGroupedApplications] = useState([]);
+  const [selectedApplicationId, setSelectedApplicationId] = useState(null);
+  const [selectedApplicationDetail, setSelectedApplicationDetail] = useState(null);
+  const [lastGroupedRefresh, setLastGroupedRefresh] = useState(null);
   const [analyticsData, setAnalyticsData] = useState(null);
+
+  const totalApplications = applications.length;
+  const pendingApplications = applications.filter((application) => application.status === 'Pending').length;
+  const approvedApplications = applications.filter((application) => application.status === 'Approved').length;
+  const viewedApplications = applications.filter((application) => application.status === 'Viewed').length;
+  const rejectedApplications = applications.filter((application) => application.status === 'Rejected').length;
+
+  const filteredApplications = applications.filter((application) => {
+    const matchesView = applicationsView === 'all' || application.status === applicationsView;
+    const query = applicationsSearch.toLowerCase();
+    const matchesSearch = !query || [
+      application.job_title,
+      application.job_company,
+      application.status,
+    ].join(' ').toLowerCase().includes(query);
+    return matchesView && matchesSearch;
+  });
 
   // Check if user is already logged in on component mount
   useEffect(() => {
@@ -50,11 +75,16 @@ function App() {
     const savedTheme = localStorage.getItem('theme');
     
     if (savedAccessToken && savedRefreshToken && savedUserType && savedUser) {
+      const parsedUser = JSON.parse(savedUser);
+      const normalizedUserType = savedUserType === 'recruiter' ? 'recruiter' : 'jobseeker';
       setAccessToken(savedAccessToken);
       setRefreshToken(savedRefreshToken);
-      setUserType(savedUserType);
-      setCurrentUser(JSON.parse(savedUser));
+      setUserType(normalizedUserType);
+      setCurrentUser(parsedUser);
       setIsAuthenticated(true);
+      if (normalizedUserType === 'recruiter') {
+        setRecruiterPage('applications');
+      }
     }
 
     if (savedTheme === 'dark' || savedTheme === 'light') {
@@ -66,16 +96,37 @@ function App() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchJobs().then(setJobs).catch(console.error);
-      fetchApplications().then(setApplications).catch(console.error);
+      refreshApplications_func();
+      if (userType === 'recruiter') {
+        refreshGroupedApplications();
+      } else {
+        setGroupedApplications([]);
+      }
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, userType]);
+
+  useEffect(() => {
+    if (isAuthenticated && userType === 'recruiter') {
+      const interval = setInterval(refreshGroupedApplications, 15000);
+      return () => clearInterval(interval);
+    }
+    return undefined;
+  }, [isAuthenticated, userType]);
 
   const handleLoginSuccess = (token, refresh, userType, user) => {
+    const normalizedUserType = userType === 'recruiter' ? 'recruiter' : 'jobseeker';
+    localStorage.setItem('accessToken', token);
+    localStorage.setItem('refreshToken', refresh);
+    localStorage.setItem('userType', normalizedUserType);
+    localStorage.setItem('user', JSON.stringify(user || {}));
     setAccessToken(token);
     setRefreshToken(refresh);
-    setUserType(userType);
+    setUserType(normalizedUserType);
     setCurrentUser(user || null);
     setIsAuthenticated(true);
+    if (normalizedUserType === 'recruiter') {
+      setRecruiterPage('applications');
+    }
   };
 
   const handleLogout = () => {
@@ -101,10 +152,39 @@ function App() {
     fetchApplications().then(setApplications).catch(console.error);
   };
 
+  const refreshGroupedApplications = async () => {
+    try {
+      const grouped = await fetchApplicationsGroupedByJob();
+      setGroupedApplications(grouped);
+      setLastGroupedRefresh(new Date());
+    } catch (error) {
+      console.error('Failed to refresh grouped applications:', error);
+    }
+  };
+
+  const openApplicationDetail = async (applicationId) => {
+    try {
+      const detail = await fetchApplicationDetail(applicationId);
+      setSelectedApplicationId(applicationId);
+      setSelectedApplicationDetail(detail);
+      setApplications((prev) => prev.map((app) => (app.id === detail.id ? detail : app)));
+      setMessage('');
+    } catch (error) {
+      console.error('Failed to load application detail:', error);
+      setMessage(`❌ ${error.message}`);
+    }
+  };
+
+  const closeApplicationDetail = () => {
+    setSelectedApplicationId(null);
+    setSelectedApplicationDetail(null);
+  };
+
   const approveApplication = async (applicationId) => {
     try {
       await updateApplication(applicationId, { status: 'Approved' });
       refreshApplications_func();
+      refreshGroupedApplications();
       setMessage('✅ Application approved! Email sent to applicant.');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -117,6 +197,7 @@ function App() {
     try {
       await updateApplication(applicationId, { status: 'Rejected' });
       refreshApplications_func();
+      refreshGroupedApplications();
       setMessage('✅ Application rejected.');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
@@ -125,25 +206,46 @@ function App() {
     }
   };
 
-  const recruiterJobs = jobs.filter((job) => job.recruiter === 1);
+  const recruiterJobs = jobs.filter((job) => Number(job.recruiter) === Number(currentUser?.id));
   const recruiterApplications = applications.filter((application) =>
-    recruiterJobs.some((job) => job.id === application.job)
+    recruiterJobs.some((job) => Number(job.id) === Number(application.job))
   );
 
   const applicationsByJob = recruiterJobs.reduce((acc, job) => {
-    acc[job.id] = { job, applications: [] };
+    acc[Number(job.id)] = { job, applications: [] };
     return acc;
   }, {});
 
   recruiterApplications.forEach((application) => {
-    if (applicationsByJob[application.job]) {
-      applicationsByJob[application.job].applications.push(application);
+    const jobId = Number(application.job);
+    if (applicationsByJob[jobId]) {
+      applicationsByJob[jobId].applications.push(application);
     }
   });
 
   const filteredJobsByRecruiter = Object.values(applicationsByJob).filter(
     (group) => group.applications.length > 0
   );
+
+  const jobApplicationCountMap = recruiterApplications.reduce((map, application) => {
+    const jobId = Number(application.job);
+    map[jobId] = (map[jobId] || 0) + 1;
+    return map;
+  }, {});
+
+  const recruiterJobStats = recruiterJobs.map((job) => ({
+    job,
+    applicationCount: jobApplicationCountMap[Number(job.id)] || 0,
+  }));
+
+  const displayedRecruiterGroups = groupedApplications.length > 0 ? groupedApplications : filteredJobsByRecruiter;
+  const recruiterApplicationCount = displayedRecruiterGroups.reduce(
+    (total, group) => total + group.applications.length,
+    0
+  );
+  const recruiterApplicationBanner = recruiterApplicationCount > 0
+    ? `You have ${recruiterApplicationCount} application${recruiterApplicationCount !== 1 ? 's' : ''} across your posted jobs.`
+    : 'No applications yet for your posted jobs.';
 
   useEffect(() => {
     let filtered = jobs;
@@ -188,9 +290,9 @@ function App() {
 
     const payload = {
       job: jobId,
-      applicant: 1,
       applicant_name: applicantName.trim(),
       applicant_email: applicantEmail.trim(),
+      resume,
       cover_letter: coverLetter,
       status: 'Pending',
     };
@@ -215,6 +317,10 @@ function App() {
       setMessage('❌ Please fill all fields');
       return;
     }
+    if (!isAuthenticated || userType !== 'recruiter') {
+      setMessage('❌ Please log in as a recruiter to post jobs.');
+      return;
+    }
     try {
       const newJob = await createJob({
         title: jobTitle,
@@ -222,7 +328,6 @@ function App() {
         location: jobLocation,
         salary: jobSalary,
         description: jobDescription,
-        recruiter: 1,
       });
       setJobs([newJob, ...jobs]);
       setFilteredJobs([newJob, ...filteredJobs]);
@@ -234,7 +339,7 @@ function App() {
       setJobSalary('');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
-      setMessage('❌ Failed to post job.');
+      setMessage(`❌ ${error.message}`);
       console.error(error);
     }
   };
@@ -287,6 +392,20 @@ function App() {
               <p>Search and apply to thousands of jobs from top companies</p>
                 <div className="hero-banner">
                     </div>
+              <div className="dashboard-cards">
+                <div className="dashboard-card">
+                  <h3>Total Applications</h3>
+                  <p>{totalApplications}</p>
+                </div>
+                <div className="dashboard-card">
+                  <h3>Pending</h3>
+                  <p>{pendingApplications}</p>
+                </div>
+                <div className="dashboard-card">
+                  <h3>Approved</h3>
+                  <p>{approvedApplications}</p>
+                </div>
+              </div>
               <div className="search-box">
                 <div className="search-input-group">
                   <input
@@ -317,6 +436,24 @@ function App() {
           <section className="jobs-layout">
             <aside className="sidebar">
               <div className="sidebar-panel">
+                <div className="sidebar-header">
+                  <h3>Dashboard</h3>
+                  <p>Your application summary</p>
+                </div>
+                <div className="dashboard-summary">
+                  <div className="dashboard-card">
+                    <h4>Total Applied</h4>
+                    <p>{totalApplications}</p>
+                  </div>
+                  <div className="dashboard-card">
+                    <h4>Pending</h4>
+                    <p>{pendingApplications}</p>
+                  </div>
+                  <div className="dashboard-card">
+                    <h4>Approved</h4>
+                    <p>{approvedApplications}</p>
+                  </div>
+                </div>
                 <div className="sidebar-header">
                   <h3>Categories</h3>
                   <p>Browse jobs by category and refine the list instantly.</p>
@@ -376,6 +513,21 @@ function App() {
               </div>
             </div>
           </section>
+          <MyApplicationsModule
+            applications={applications}
+            filteredApplications={filteredApplications}
+            showMyApplications={showMyApplications}
+            setShowMyApplications={setShowMyApplications}
+            applicationsView={applicationsView}
+            setApplicationsView={setApplicationsView}
+            applicationsSearch={applicationsSearch}
+            setApplicationsSearch={setApplicationsSearch}
+            totalApplications={totalApplications}
+            pendingApplications={pendingApplications}
+            viewedApplications={viewedApplications}
+            approvedApplications={approvedApplications}
+            rejectedApplications={rejectedApplications}
+          />
         </div>
       ) : (
         <div className="recruiter-section">
@@ -390,7 +542,7 @@ function App() {
               className={recruiterPage === 'applications' ? 'page-btn active' : 'page-btn'}
               onClick={() => setRecruiterPage('applications')}
             >
-              Applications
+              Applications {recruiterApplicationCount > 0 ? `(${recruiterApplicationCount})` : ''}
             </button>
             <button
               className={recruiterPage === 'analytics' ? 'page-btn active' : 'page-btn'}
@@ -457,19 +609,51 @@ function App() {
                     Post Job
                   </button>
                 </form>
+                <div className="posted-jobs-panel">
+                  <h3>Your posted jobs</h3>
+                  {recruiterJobStats.length === 0 ? (
+                    <p className="no-jobs">You haven't posted any jobs yet.</p>
+                  ) : (
+                    <div className="posted-jobs-grid">
+                      {recruiterJobStats.map(({ job, applicationCount }) => (
+                        <div key={job.id} className="posted-job-card">
+                          <div className="posted-job-header">
+                            <h4>{job.title}</h4>
+                            <span className="applications-count">
+                              {applicationCount} applicant{applicationCount !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                          <p>{job.company} • {job.location}</p>
+                          {job.salary && <p>Salary: {job.salary}</p>}
+                          <p>{job.description.substring(0, 100)}{job.description.length > 100 ? '...' : ''}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
           ) : recruiterPage === 'applications' ? (
             <section className="applications-page">
               <div className="dashboard-header">
                 <h2>Applications Received</h2>
-                <p>Review applicant details and resume uploads for your posted jobs.</p>
+                <p>{recruiterApplicationBanner}</p>
+                <div className="applications-controls">
+                  <button className="refresh-btn" onClick={refreshGroupedApplications}>
+                    Refresh applications
+                  </button>
+                  {lastGroupedRefresh && (
+                    <span className="last-updated">
+                      Last updated {lastGroupedRefresh.toLocaleTimeString()}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="applications-panel">
-                {filteredJobsByRecruiter.length === 0 ? (
+                {displayedRecruiterGroups.length === 0 ? (
                   <p>No applications yet.</p>
                 ) : (
-                  filteredJobsByRecruiter.map(({ job, applications }) => (
+                  displayedRecruiterGroups.map(({ job, applications }) => (
                     <div key={job.id} className="job-applications-card">
                       <div className="job-applications-header">
                         <div>
@@ -494,8 +678,16 @@ function App() {
                                   {application.status} • Applied on {new Date(application.applied_at).toLocaleDateString()}
                                 </div>
                               </div>
-                              <div className={`status-badge ${application.status.toLowerCase()}`}>
-                                {application.status}
+                              <div className="applicant-top-actions">
+                                <button
+                                  className="view-details-btn"
+                                  onClick={() => openApplicationDetail(application.id)}
+                                >
+                                  View details
+                                </button>
+                                <div className={`status-badge ${application.status.toLowerCase()}`}>
+                                  {application.status}
+                                </div>
                               </div>
                             </div>
                             <div className="applicant-details-grid">
@@ -646,6 +838,46 @@ function App() {
 
       {/* Message Alert */}
       {message && <div className="alert">{message}</div>}
+
+      {selectedApplicationId && selectedApplicationDetail && (
+        <div className="modal-overlay" onClick={closeApplicationDetail}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Application Details</h2>
+              <button className="close-btn" onClick={closeApplicationDetail}>
+                ×
+              </button>
+            </div>
+            <div className="modal-body application-detail-modal">
+              <p><strong>Applicant:</strong> {selectedApplicationDetail.applicant_name || selectedApplicationDetail.applicant}</p>
+              <p><strong>Email:</strong> {selectedApplicationDetail.applicant_email || 'Not provided'}</p>
+              <p><strong>Status:</strong> {selectedApplicationDetail.status}</p>
+              <p><strong>Applied on:</strong> {new Date(selectedApplicationDetail.applied_at).toLocaleDateString()}</p>
+              <div className="form-group">
+                <label>Resume</label>
+                {selectedApplicationDetail.resume_file ? (
+                  <a className="resume-link" href={getResumeUrl(selectedApplicationDetail.resume_file)} target="_blank" rel="noreferrer">
+                    Download PDF
+                  </a>
+                ) : selectedApplicationDetail.resume ? (
+                  <p>{selectedApplicationDetail.resume.substring(0, 260)}{selectedApplicationDetail.resume.length > 260 ? '...' : ''}</p>
+                ) : (
+                  <p>Not provided</p>
+                )}
+              </div>
+              <div className="form-group">
+                <label>Cover Letter</label>
+                <p>{selectedApplicationDetail.cover_letter || 'Not provided'}</p>
+              </div>
+              <div className="modal-footer">
+                <button className="cancel-btn" onClick={closeApplicationDetail}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
         </div>
       )}
     </>

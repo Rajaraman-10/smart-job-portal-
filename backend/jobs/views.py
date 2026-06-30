@@ -1,13 +1,16 @@
 from rest_framework import viewsets, status
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.conf import settings
+from django.core.mail import send_mail
 from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
+from django.db.models import Q
 from .models import Job, Application
 from .serializers import (
     JobSerializer,
@@ -70,15 +73,8 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         user_type = user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
         
         if user_type == 'recruiter':
-            # Recruiters see applications for jobs they posted
-            return Application.objects.filter(
-                job__recruiter=user
-            ).order_by('-applied_at')
-        else:
-            # Job seekers see only their own applications
-            return Application.objects.filter(
-                applicant=user
-            ).order_by('-applied_at')
+            return Application.objects.filter(job__recruiter=user).order_by('-applied_at')
+        return Application.objects.filter(applicant=user).order_by('-applied_at')
 
     def perform_create(self, serializer):
         applicant_user = self.request.user
@@ -90,7 +86,65 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             applicant_name=applicant_name,
             applicant_email=applicant_email,
         )
+
+        try:
+            recruiter = application.job.recruiter
+            recruiter_email = recruiter.email
+            if recruiter_email:
+                subject = f"New application for {application.job.title}"
+                message = (
+                    f"Hello {recruiter.first_name or recruiter.username},\n\n"
+                    f"A new candidate has applied for your job posting:\n"
+                    f"Job title: {application.job.title}\n"
+                    f"Applicant: {application.applicant_name}\n"
+                    f"Email: {application.applicant_email}\n"
+                    f"Cover letter: {application.cover_letter or 'Not provided'}\n\n"
+                    f"View the application in your dashboard to take next steps.\n\n"
+                    "-- Smart Job Portal"
+                )
+                send_mail(
+                    subject,
+                    message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [recruiter_email],
+                    fail_silently=True,
+                )
+        except Exception:
+            pass
+
         return application
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        user = request.user
+        user_type = user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+
+        if user_type == 'recruiter' and instance.job.recruiter == user and instance.status == 'Pending':
+            instance.status = 'Viewed'
+            instance.viewed_at = timezone.now()
+            instance.save(update_fields=['status', 'viewed_at'])
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='grouped-by-job')
+    def grouped_by_job(self, request):
+        """Return recruiter applications grouped by posted job."""
+        user = request.user
+        user_type = user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+        
+        if user_type != 'recruiter':
+            return Response({'detail': 'Only recruiters can view grouped job applications.'}, status=status.HTTP_403_FORBIDDEN)
+
+        jobs = Job.objects.filter(recruiter=user).order_by('-posted_at')
+        grouped = []
+        for job in jobs:
+            applications = Application.objects.filter(job=job).order_by('-applied_at')
+            grouped.append({
+                'job': JobSerializer(job).data,
+                'applications': ApplicationSerializer(applications, many=True).data,
+            })
+        return Response(grouped)
 
 
 class RegisterView(APIView):
@@ -118,19 +172,18 @@ class LoginView(APIView):
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         if serializer.is_valid():
-            email = serializer.validated_data['email']
+            email = serializer.validated_data['email'].strip().lower()
             password = serializer.validated_data['password']
-            
-            try:
-                user = User.objects.get(email=email)
-            except User.DoesNotExist:
+
+            user = User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).first()
+            if user is None:
                 return Response({'error': 'Invalid email or password'}, status=status.HTTP_400_BAD_REQUEST)
-            
+
             user = authenticate(username=user.username, password=password)
             if user is None:
                 return Response({'error': 'Invalid email or password'}, status=status.HTTP_400_BAD_REQUEST)
             
-            user_type = user.first_name if user.first_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+            user_type = user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
             tokens = get_tokens_for_user(user, user_type)
             
             return Response({

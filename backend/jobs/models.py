@@ -31,6 +31,13 @@ class Job(models.Model):
         return f"{self.title} at {self.company}"
 
 class Application(models.Model):
+    APPLICATION_STATUS_CHOICES = [
+        ('Pending', 'Pending'),
+        ('Viewed', 'Viewed'),
+        ('Approved', 'Approved'),
+        ('Rejected', 'Rejected'),
+    ]
+
     job = models.ForeignKey(Job, on_delete=models.CASCADE)
     applicant = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     applicant_name = models.CharField(max_length=255, blank=True, default='')
@@ -39,7 +46,12 @@ class Application(models.Model):
     resume_file = models.FileField(upload_to='resumes/', blank=True, null=True)
     cover_letter = models.TextField(blank=True)
     applied_at = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=50, default='Pending')
+    viewed_at = models.DateTimeField(blank=True, null=True)
+    status = models.CharField(
+        max_length=50,
+        choices=APPLICATION_STATUS_CHOICES,
+        default='Pending',
+    )
 
     def __str__(self):
         return f"Application by {self.applicant_name or self.applicant} for {self.job}"
