@@ -113,6 +113,14 @@ function App() {
     return undefined;
   }, [isAuthenticated, userType]);
 
+  useEffect(() => {
+    if (isAuthenticated && userType === 'jobseeker') {
+      const interval = setInterval(refreshApplications_func, 15000);
+      return () => clearInterval(interval);
+    }
+    return undefined;
+  }, [isAuthenticated, userType]);
+
   const handleLoginSuccess = (token, refresh, userType, user) => {
     const normalizedUserType = userType === 'recruiter' ? 'recruiter' : 'jobseeker';
     localStorage.setItem('accessToken', token);
@@ -161,6 +169,34 @@ function App() {
       console.error('Failed to refresh grouped applications:', error);
     }
   };
+
+  const triggerApplicationUpdate = () => {
+    const now = Date.now().toString();
+    localStorage.setItem('lastApplicationUpdate', now);
+    window.dispatchEvent(new Event('applicationUpdate'));
+  };
+
+  useEffect(() => {
+    const onStorage = (event) => {
+      if (event.key === 'lastApplicationUpdate' && userType === 'recruiter') {
+        refreshGroupedApplications();
+      }
+    };
+
+    const onApplicationUpdate = () => {
+      if (userType === 'recruiter') {
+        refreshGroupedApplications();
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('applicationUpdate', onApplicationUpdate);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('applicationUpdate', onApplicationUpdate);
+    };
+  }, [userType]);
 
   const openApplicationDetail = async (applicationId) => {
     try {
@@ -302,6 +338,7 @@ function App() {
     try {
       await createApplication(payload);
       refreshApplications_func();
+      triggerApplicationUpdate();
       setMessage('✅ Application submitted successfully!');
       setSelectedJobId(null);
       setApplicantName('');
