@@ -243,6 +243,9 @@ function App() {
     (total, group) => total + group.applications.length,
     0
   );
+  const recruiterPendingCount = recruiterApplications.filter((application) => application.status === 'Pending').length;
+  const recruiterViewedCount = recruiterApplications.filter((application) => application.status === 'Viewed').length;
+  const recruiterApprovedCount = recruiterApplications.filter((application) => application.status === 'Approved').length;
   const recruiterApplicationBanner = recruiterApplicationCount > 0
     ? `You have ${recruiterApplicationCount} application${recruiterApplicationCount !== 1 ? 's' : ''} across your posted jobs.`
     : 'No applications yet for your posted jobs.';
@@ -358,23 +361,35 @@ function App() {
             vipseekers
           </div>
           <div className="nav-links">
-            <button
-              className={userType === 'jobseeker' ? 'active' : ''}
-              onClick={() => setUserType('jobseeker')}
-            >
-              Job Seeker
-            </button>
-            <button
-              className={userType === 'recruiter' ? 'active' : ''}
-              onClick={() => setUserType('recruiter')}
-            >
-              Post Job
-            </button>
+            {userType === 'recruiter' ? (
+              <>
+                <button
+                  className={recruiterPage === 'postJob' ? 'active' : ''}
+                  onClick={() => setRecruiterPage('postJob')}
+                >
+                  Post Job
+                </button>
+                <button
+                  className={recruiterPage === 'applications' ? 'active' : ''}
+                  onClick={() => setRecruiterPage('applications')}
+                >
+                  Applications
+                </button>
+                <button
+                  className={recruiterPage === 'analytics' ? 'active' : ''}
+                  onClick={() => setRecruiterPage('analytics')}
+                >
+                  Dashboard
+                </button>
+              </>
+            ) : (
+              <span className="nav-role-badge">🔍 Job Seeker</span>
+            )}
             <button className="theme-toggle-btn" onClick={toggleTheme}>
               {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
             </button>
             <div className="nav-user-section">
-              <span className="user-info">👤 {userType}</span>
+              <span className="user-info">👤 {currentUser?.username || currentUser?.email}</span>
               <button className="logout-btn" onClick={handleLogout}>
                 Logout
               </button>
@@ -531,6 +546,53 @@ function App() {
         </div>
       ) : (
         <div className="recruiter-section">
+          <div className="recruiter-header">
+            <div>
+              <span className="section-eyebrow">Recruiter workspace</span>
+              <h2>Your hiring dashboard</h2>
+              <p>Post jobs, review applicants, and manage hiring from one polished recruiter experience.</p>
+            </div>
+            <div className="recruiter-header-actions">
+              <button
+                className={recruiterPage === 'postJob' ? 'page-btn active' : 'page-btn'}
+                onClick={() => setRecruiterPage('postJob')}
+              >
+                Post Job
+              </button>
+              <button
+                className={recruiterPage === 'applications' ? 'page-btn active' : 'page-btn'}
+                onClick={() => setRecruiterPage('applications')}
+              >
+                Applications {recruiterApplicationCount > 0 ? `(${recruiterApplicationCount})` : ''}
+              </button>
+              <button
+                className={recruiterPage === 'analytics' ? 'page-btn active' : 'page-btn'}
+                onClick={() => setRecruiterPage('analytics')}
+              >
+                Dashboard
+              </button>
+            </div>
+          </div>
+
+          <div className="recruiter-metrics-grid">
+            <div className="metric-card recruiter-metric-card">
+              <span>Posted Jobs</span>
+              <strong>{recruiterJobs.length}</strong>
+            </div>
+            <div className="metric-card recruiter-metric-card">
+              <span>Total Applicants</span>
+              <strong>{recruiterApplicationCount}</strong>
+            </div>
+            <div className="metric-card recruiter-metric-card">
+              <span>Pending Reviews</span>
+              <strong>{recruiterPendingCount}</strong>
+            </div>
+            <div className="metric-card recruiter-metric-card">
+              <span>Viewed Applications</span>
+              <strong>{recruiterViewedCount}</strong>
+            </div>
+          </div>
+
           <div className="page-switcher">
             <button
               className={recruiterPage === 'postJob' ? 'page-btn active' : 'page-btn'}

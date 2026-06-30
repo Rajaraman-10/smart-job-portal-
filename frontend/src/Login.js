@@ -3,8 +3,9 @@ import { register, login } from './services/api';
 import './Login.css';
 
 function Login({ onLoginSuccess }) {
+  const [step, setStep] = useState('role'); // 'role', 'auth'
+  const [selectedRole, setSelectedRole] = useState(null);
   const [isRegister, setIsRegister] = useState(false);
-  const [userType, setUserType] = useState('jobseeker');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -32,7 +33,7 @@ function Login({ onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const res = await register(name, email, password, userType);
+      const res = await register(name, email, password, selectedRole);
       setMessage('✅ Registration successful! Please log in.');
       setIsRegister(false);
       setName('');
@@ -55,6 +56,14 @@ function Login({ onLoginSuccess }) {
     setLoading(true);
     try {
       const res = await login(email, password);
+      
+      // Verify that user's role matches selected role
+      if (res.user_type !== selectedRole) {
+        setError(`❌ This account is registered as a ${res.user_type === 'recruiter' ? 'Recruiter' : 'Job Seeker'}. Please login with the correct role.`);
+        setLoading(false);
+        return;
+      }
+      
       localStorage.setItem('accessToken', res.access);
       localStorage.setItem('refreshToken', res.refresh);
       localStorage.setItem('userType', res.user_type);
@@ -68,41 +77,125 @@ function Login({ onLoginSuccess }) {
     }
   };
 
+  if (step === 'role') {
+    return (
+      <div className="login-page">
+        <div className="role-selection-container">
+          <div className="role-selection-content">
+            <h1 className="role-title">Welcome to vipseekers</h1>
+            <p className="role-subtitle">Choose your role to get started</p>
+
+            <div className="role-cards">
+              <button
+                className={`role-card job-seeker-card ${selectedRole === 'jobseeker' ? 'selected' : ''}`}
+                onClick={() => {
+                  setSelectedRole('jobseeker');
+                  setStep('auth');
+                  setIsRegister(false);
+                  setError('');
+                  setMessage('');
+                }}
+                disabled={loading}
+              >
+                <div className="role-icon">🔍</div>
+                <h2>Job Seeker</h2>
+                <ul className="role-benefits">
+                  <li>✓ Explore job opportunities</li>
+                  <li>✓ Track applications</li>
+                  <li>✓ Get notifications</li>
+                </ul>
+                <span className="role-cta">Continue as Job Seeker</span>
+              </button>
+
+              <button
+                className={`role-card recruiter-card ${selectedRole === 'recruiter' ? 'selected' : ''}`}
+                onClick={() => {
+                  setSelectedRole('recruiter');
+                  setStep('auth');
+                  setIsRegister(false);
+                  setError('');
+                  setMessage('');
+                }}
+                disabled={loading}
+              >
+                <div className="role-icon">👔</div>
+                <h2>Recruiter</h2>
+                <ul className="role-benefits">
+                  <li>✓ Post job openings</li>
+                  <li>✓ Manage applicants</li>
+                  <li>✓ Build your team</li>
+                </ul>
+                <span className="role-cta">Continue as Recruiter</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const isJobSeeker = selectedRole === 'jobseeker';
+  const roleLabel = isJobSeeker ? 'Job Seeker' : 'Recruiter';
+
   return (
     <div className="login-page">
       {isRegister ? (
         <div className="login-container register-container">
-          <div className="login-benefits">
+          <div className="login-benefits" style={{
+            background: isJobSeeker 
+              ? 'linear-gradient(135deg, #0366d6 0%, #0256b8 100%)'
+              : 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)'
+          }}>
             <div className="benefits-content">
-              <div className="benefits-icon">👤</div>
-              <h2>On registering, you can</h2>
+              <div className="benefits-icon">{isJobSeeker ? '🚀' : '💼'}</div>
+              <h2>On registering as a {roleLabel}, you can</h2>
               <ul className="benefits-list">
-                <li>
-                  <span className="check-icon">✓</span>
-                  <div>
-                    <strong>Build your profile and let recruiters find you</strong>
-                  </div>
-                </li>
-                <li>
-                  <span className="check-icon">✓</span>
-                  <div>
-                    <strong>Get job postings delivered right to your email</strong>
-                  </div>
-                </li>
-                <li>
-                  <span className="check-icon">✓</span>
-                  <div>
-                    <strong>Find a job and grow your career</strong>
-                  </div>
-                </li>
+                {isJobSeeker ? (
+                  <>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Build your profile and let recruiters find you</strong></div>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Get job postings delivered right to your email</strong></div>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Find a job and grow your career</strong></div>
+                    </li>
+                  </>
+                ) : (
+                  <>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Post unlimited job openings</strong></div>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Access qualified candidates instantly</strong></div>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Manage hiring and build your team</strong></div>
+                    </li>
+                  </>
+                )}
               </ul>
             </div>
           </div>
 
           <div className="login-box register-box">
             <div className="form-header">
-              <h2>Create your account</h2>
-              <p>Join thousands of professionals finding their dream role</p>
+              <button 
+                className="back-btn" 
+                onClick={() => setStep('role')}
+                disabled={loading}
+              >
+                ← Change Role
+              </button>
+              <h2>Create your {roleLabel} account</h2>
+              <p>Join thousands of professionals on vipseekers</p>
             </div>
 
             {error && <div className="error-message">{error}</div>}
@@ -163,65 +256,56 @@ function Login({ onLoginSuccess }) {
                 />
               </div>
 
-              <div className="form-group">
-                <label htmlFor="mobile">Mobile number<span className="required">*</span></label>
-                <div className="mobile-input">
-                  <span className="country-code">+91</span>
-                  <input 
-                    id="mobile" 
-                    type="tel" 
-                    placeholder="Enter your mobile number" 
-                    value={mobile} 
-                    onChange={(e) => setMobile(e.target.value)} 
-                    disabled={loading} 
-                    required 
-                  />
-                </div>
-                <small>Recruiters will contact you on this number</small>
-              </div>
-
-              <div className="form-group">
-                <label>Work status<span className="required">*</span></label>
-                <div className="work-status-options">
-                  <button
-                    type="button"
-                    className={`work-status-btn ${workStatus === 'experienced' ? 'active' : ''}`}
-                    onClick={() => setWorkStatus('experienced')}
-                    disabled={loading}
-                  >
-                    <div className="status-icon">💼</div>
-                    <div className="status-text">
-                      <strong>I'm experienced</strong>
-                      <p>I have work experience (excluding internships)</p>
+              {isJobSeeker && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="mobile">Mobile number<span className="required">*</span></label>
+                    <div className="mobile-input">
+                      <span className="country-code">+91</span>
+                      <input 
+                        id="mobile" 
+                        type="tel" 
+                        placeholder="Enter your mobile number" 
+                        value={mobile} 
+                        onChange={(e) => setMobile(e.target.value)} 
+                        disabled={loading} 
+                        required 
+                      />
                     </div>
-                  </button>
-                  <button
-                    type="button"
-                    className={`work-status-btn ${workStatus === 'fresher' ? 'active' : ''}`}
-                    onClick={() => setWorkStatus('fresher')}
-                    disabled={loading}
-                  >
-                    <div className="status-icon">🎓</div>
-                    <div className="status-text">
-                      <strong>I'm a fresher</strong>
-                      <p>I am a student / Haven't worked after graduation</p>
-                    </div>
-                  </button>
-                </div>
-              </div>
+                    <small>Recruiters will contact you on this number</small>
+                  </div>
 
-              <div className="form-group form-group-select">
-                <label htmlFor="userType">I am a<span className="required">*</span></label>
-                <select 
-                  id="userType" 
-                  value={userType} 
-                  onChange={(e) => setUserType(e.target.value)} 
-                  disabled={loading}
-                >
-                  <option value="jobseeker">Job Seeker</option>
-                  <option value="recruiter">Recruiter</option>
-                </select>
-              </div>
+                  <div className="form-group">
+                    <label>Work status<span className="required">*</span></label>
+                    <div className="work-status-options">
+                      <button
+                        type="button"
+                        className={`work-status-btn ${workStatus === 'experienced' ? 'active' : ''}`}
+                        onClick={() => setWorkStatus('experienced')}
+                        disabled={loading}
+                      >
+                        <div className="status-icon">💼</div>
+                        <div className="status-text">
+                          <strong>I'm experienced</strong>
+                          <p>I have work experience (excluding internships)</p>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        className={`work-status-btn ${workStatus === 'fresher' ? 'active' : ''}`}
+                        onClick={() => setWorkStatus('fresher')}
+                        disabled={loading}
+                      >
+                        <div className="status-icon">🎓</div>
+                        <div className="status-text">
+                          <strong>I'm a fresher</strong>
+                          <p>I am a student / Haven't worked after graduation</p>
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <button type="submit" className="btn-submit" disabled={loading}>
                 {loading ? 'Creating account...' : 'Create account'}
@@ -241,37 +325,61 @@ function Login({ onLoginSuccess }) {
         </div>
       ) : (
         <div className="login-container">
-          <div className="login-benefits">
+          <div className="login-benefits" style={{
+            background: isJobSeeker 
+              ? 'linear-gradient(135deg, #0366d6 0%, #0256b8 100%)'
+              : 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)'
+          }}>
             <div className="benefits-content">
-              <div className="benefits-icon">🚀</div>
-              <h2>Welcome back!</h2>
+              <div className="benefits-icon">{isJobSeeker ? '👋' : '🎯'}</div>
+              <h2>Welcome back, {roleLabel}!</h2>
               <ul className="benefits-list">
-                <li>
-                  <span className="check-icon">✓</span>
-                  <div>
-                    <strong>Access all your applications and updates</strong>
-                  </div>
-                </li>
-                <li>
-                  <span className="check-icon">✓</span>
-                  <div>
-                    <strong>Get personalized job recommendations</strong>
-                  </div>
-                </li>
-                <li>
-                  <span className="check-icon">✓</span>
-                  <div>
-                    <strong>Connect with top recruiters instantly</strong>
-                  </div>
-                </li>
+                {isJobSeeker ? (
+                  <>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Access all your applications</strong></div>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Get personalized recommendations</strong></div>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Connect with top companies</strong></div>
+                    </li>
+                  </>
+                ) : (
+                  <>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Review qualified applications</strong></div>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Manage your job postings</strong></div>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <div><strong>Build your team efficiently</strong></div>
+                    </li>
+                  </>
+                )}
               </ul>
             </div>
           </div>
 
           <div className="login-box">
             <div className="form-header">
-              <h2>Login to your account</h2>
-              <p>Access your job applications and opportunities</p>
+              <button 
+                className="back-btn" 
+                onClick={() => setStep('role')}
+                disabled={loading}
+              >
+                ← Change Role
+              </button>
+              <h2>Login to your {roleLabel} account</h2>
+              <p>Access your opportunities on vipseekers</p>
             </div>
 
             {error && <div className="error-message">{error}</div>}
@@ -314,7 +422,7 @@ function Login({ onLoginSuccess }) {
               <span className="google-icon">G</span>
               Continue with Google
             </button>
-            
+
             <p className="toggle-auth">
               Don't have an account? <button type="button" onClick={() => { setIsRegister(true); setError(''); setMessage(''); setEmail(''); setPassword(''); }} disabled={loading}>Register</button>
             </p>
@@ -326,4 +434,3 @@ function Login({ onLoginSuccess }) {
 }
 
 export default Login;
-
