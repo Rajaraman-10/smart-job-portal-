@@ -1,14 +1,43 @@
 from rest_framework import serializers
-from .models import Job, Application, Message, Company, RecruiterProfile
+from .models import Job, Application, Message, Company, RecruiterProfile, Bookmark, Interview
 from django.contrib.auth.models import User
 from django.db.models import Q
+
+class InterviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Interview
+        fields = ['id', 'application', 'scheduled_at', 'mode', 'location_or_link', 'notes', 'created_at']
+
+
+class BookmarkSerializer(serializers.ModelSerializer):
+    job_title = serializers.CharField(source='job.title', read_only=True)
+    job_company = serializers.CharField(source='job.company', read_only=True)
+    job_location = serializers.CharField(source='job.location', read_only=True)
+
+    class Meta:
+        model = Bookmark
+        fields = ['id', 'user', 'job', 'job_title', 'job_company', 'job_location', 'created_at']
+        read_only_fields = ['user']
+
 
 class JobSerializer(serializers.ModelSerializer):
     company_meta = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
-        fields = '__all__'
+        fields = [
+            'id',
+            'recruiter',
+            'title',
+            'company',
+            'location',
+            'salary',
+            'description',
+            'category',
+            'required_skills',
+            'company_meta',
+            'posted_at',
+        ]
         read_only_fields = ['recruiter', 'posted_at']
 
     def get_company_meta(self, obj):
@@ -80,6 +109,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
     applicant_email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     resume_file = serializers.FileField(required=False, allow_null=True)
     messages = MessageSerializer(many=True, read_only=True)
+    interviews = InterviewSerializer(many=True, read_only=True)
     message_count = serializers.SerializerMethodField()
     unread_message_count = serializers.SerializerMethodField()
     has_conversation = serializers.SerializerMethodField()
@@ -97,10 +127,12 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'resume',
             'resume_file',
             'cover_letter',
+            'skills',
             'status',
             'applied_at',
             'viewed_at',
             'messages',
+            'interviews',
             'message_count',
             'unread_message_count',
             'has_conversation',

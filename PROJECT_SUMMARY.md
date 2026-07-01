@@ -242,15 +242,6 @@ npm.cmd start
 
 ### Not Yet Implemented (Future Work)
 - ❌ User authentication (currently uses hardcoded user IDs)
-- ❌ Persistent user sessions/login system
-- ❌ Job seeker dashboard (view my applications)
-- ❌ Recruiter job management (edit/delete jobs)
-- ❌ Application filtering by status
-- ❌ Real email sending (Gmail SMTP config needed)
-- ❌ Job categories backend filtering
-- ❌ Experience/skills tracking
-- ❌ Job bookmarking/favorites
-- ❌ Interview scheduling
 - ❌ Mobile app
 - ❌ Admin panel for moderation
 

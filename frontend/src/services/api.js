@@ -290,3 +290,102 @@ export async function updateApplication(applicationId, data) {
   }
   return response.json();
 }
+
+export async function deleteJob(jobId) {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to delete job';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return true;
+}
+
+export async function fetchBookmarks() {
+  const response = await fetch(`${API_BASE_URL}/bookmarks/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load bookmarks');
+  }
+  return response.json();
+}
+
+export async function addBookmark(jobId) {
+  const response = await fetch(`${API_BASE_URL}/bookmarks/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ job: jobId }),
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to save bookmark';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
+export async function removeBookmark(bookmarkId) {
+  const response = await fetch(`${API_BASE_URL}/bookmarks/${bookmarkId}/`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to remove bookmark';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return true;
+}
+
+export async function scheduleInterview(payload) {
+  const response = await fetch(`${API_BASE_URL}/interviews/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to schedule interview';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}

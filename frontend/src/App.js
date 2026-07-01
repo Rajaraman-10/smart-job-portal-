@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, createJob, updateJob, createMessage } from './services/api';
+import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, createJob, updateJob, createMessage, deleteJob, fetchBookmarks } from './services/api';
 import Login from './Login';
 import MyApplicationsModule from './MyApplicationsModule';
+import BookmarkButton from './BookmarkButton';
+import { InterviewScheduler, InterviewSummary } from './InterviewPanel';
 import './App.css';
 
 function App() {
@@ -32,7 +34,9 @@ function App() {
   const [resume, setResume] = useState('');
   const [resumeFile, setResumeFile] = useState(null);
   const [coverLetter, setCoverLetter] = useState('');
+  const [applicantSkills, setApplicantSkills] = useState('');
   const [message, setMessage] = useState('');
+  const [bookmarks, setBookmarks] = useState([]);
   const [showMyApplications, setShowMyApplications] = useState(true);
   const [applicationsView, setApplicationsView] = useState('all');
   const [applicationsSearch, setApplicationsSearch] = useState('');
@@ -42,6 +46,8 @@ function App() {
   const [jobLocation, setJobLocation] = useState('');
   const [jobCompany, setJobCompany] = useState('');
   const [jobSalary, setJobSalary] = useState('');
+  const [jobCategory, setJobCategory] = useState('General');
+  const [jobRequiredSkills, setJobRequiredSkills] = useState('');
   const [companyLogo, setCompanyLogo] = useState('');
   const [companyCoverImage, setCompanyCoverImage] = useState('');
   const [companyWebsite, setCompanyWebsite] = useState('');
@@ -59,6 +65,7 @@ function App() {
   const [applicationMessageText, setApplicationMessageText] = useState('');
   const [lastGroupedRefresh, setLastGroupedRefresh] = useState(null);
   const [analyticsData, setAnalyticsData] = useState(null);
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
 
   const totalApplications = applications.length;
   const pendingApplications = applications.filter((application) => application.status === 'Pending').length;
@@ -76,6 +83,21 @@ function App() {
     ].join(' ').toLowerCase().includes(query);
     return matchesView && matchesSearch;
   });
+
+  const dashboardProgress = totalApplications > 0
+    ? Math.round(((approvedApplications + viewedApplications) / totalApplications) * 100)
+    : 0;
+  const dashboardTrackerRows = applications.slice(0, 4).map((application) => ({
+    id: application.id,
+    title: application.job_title || 'Application',
+    company: application.job_company || 'Company',
+    date: application.applied_at ? new Date(application.applied_at).toLocaleDateString() : 'Recently updated',
+    status: application.status || 'Pending',
+  }));
+  const featuredJobs = filteredJobs.slice(0, 4);
+  const visibleJobs = showSavedOnly
+    ? filteredJobs.filter((job) => bookmarks.some((bookmark) => Number(bookmark.job) === Number(job.id)))
+    : filteredJobs;
 
   // Check if user is already logged in on component mount
   useEffect(() => {
@@ -112,6 +134,7 @@ function App() {
         refreshGroupedApplications();
       } else {
         setGroupedApplications([]);
+        fetchBookmarks().then(setBookmarks).catch(console.error);
       }
     }
   }, [isAuthenticated, userType]);
@@ -159,6 +182,7 @@ function App() {
     setCurrentUser(null);
     setIsAuthenticated(false);
     setAnalyticsData(null);
+    setBookmarks([]);
   };
 
   const toggleTheme = () => {
@@ -382,6 +406,7 @@ function App() {
       applicant_email: applicantEmail.trim(),
       resume,
       cover_letter: coverLetter,
+      skills: applicantSkills.trim(),
       status: 'Pending',
     };
     try {
@@ -393,6 +418,7 @@ function App() {
       setApplicantName('');
       setApplicantEmail('');
       setCoverLetter('');
+      setApplicantSkills('');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
       setMessage(`❌ ${error.message}`);
@@ -407,6 +433,8 @@ function App() {
     setJobLocation('');
     setJobCompany(currentUser?.company_name || '');
     setJobSalary('');
+    setJobCategory('General');
+    setJobRequiredSkills('');
     setCompanyLogo('');
     setCompanyCoverImage('');
     setCompanyWebsite('');
@@ -493,6 +521,8 @@ function App() {
     setJobLocation(job.location || '');
     setJobCompany(job.company || '');
     setJobSalary(job.salary || '');
+    setJobCategory(job.category || 'General');
+    setJobRequiredSkills(job.required_skills || '');
     setCompanyLogo(job.company_meta?.logo || '');
     setCompanyCoverImage(job.company_meta?.cover_image || '');
     setCompanyWebsite(job.company_meta?.website || '');
@@ -503,6 +533,23 @@ function App() {
     setCompanyDescription(job.company_meta?.description || '');
     setRecruiterPage('postJob');
     setMessage('Editing existing job. Save changes or cancel to continue.');
+  };
+
+  const handleDeleteJob = async (jobId) => {
+    if (!window.confirm('Delete this job posting and its applications?')) {
+      return;
+    }
+
+    try {
+      await deleteJob(jobId);
+      setJobs((prevJobs) => prevJobs.filter((job) => job.id !== jobId));
+      setFilteredJobs((prevJobs) => prevJobs.filter((job) => job.id !== jobId));
+      setMessage('✅ Job deleted successfully.');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      setMessage(`❌ ${error.message}`);
+      console.error(error);
+    }
   };
 
   const postJob = async (e) => {
@@ -743,6 +790,7 @@ function App() {
                           <p className="company-job-description">{(job.description || '').substring(0, 120)}{(job.description || '').length > 120 ? '...' : ''}</p>
                         </div>
                         <div className="company-job-actions">
+                          <BookmarkButton job={job} bookmarks={bookmarks} onChange={setBookmarks} />
                           <button className="apply-btn" onClick={() => setSelectedJobId(job.id)}>
                             Apply
                           </button>
@@ -824,6 +872,15 @@ function App() {
                         rows="4"
                       />
                     </div>
+                    <div className="form-group">
+                      <label>Skills</label>
+                      <textarea
+                        value={applicantSkills}
+                        onChange={(e) => setApplicantSkills(e.target.value)}
+                        placeholder="e.g. React, Node.js, Python"
+                        rows="3"
+                      />
+                    </div>
                     <div className="company-application-panel-footer">
                       <button className="cancel-btn" onClick={() => setSelectedJobId(null)}>
                         Cancel
@@ -838,168 +895,260 @@ function App() {
             </div>
           </div>
         ) : (
-          <div className="jobseeker-section">
-            <section className="hero">
-            <div className="hero-content">
-              <div className="hero-top">
-                <div>
-                  <span className="hero-eyebrow">Job Seeker Dashboard</span>
-                  <h1>Find the right role for your next step.</h1>
-                  <p>Search jobs, manage applications, and move ahead with confidence.</p>
-                </div>
-                <div className="hero-cta">
-                  <span>Welcome back, {currentUser?.first_name || currentUser?.username || 'talent'}.</span>
-                  <p>Latest opportunities and application status are updated in real time.</p>
-                </div>
-              </div>
-
-              <div className="hero-stats-grid">
-                <div className="hero-stat-card">
-                  <span>Total applications</span>
-                  <strong>{totalApplications}</strong>
-                </div>
-                <div className="hero-stat-card">
-                  <span>Pending review</span>
-                  <strong>{pendingApplications}</strong>
-                </div>
-                <div className="hero-stat-card">
-                  <span>Viewed by recruiter</span>
-                  <strong>{viewedApplications}</strong>
-                </div>
-                <div className="hero-stat-card">
-                  <span>Approved</span>
-                  <strong>{approvedApplications}</strong>
-                </div>
-              </div>
-
-              <div className="search-card">
-                <div className="search-box">
-                  <div className="search-input-group">
-                    <label>What are you looking for?</label>
-                    <input
-                      type="text"
-                      placeholder="Job title or company name"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="search-input"
-                    />
-                  </div>
-                  <div className="search-input-group">
-                    <label>Location</label>
-                    <input
-                      type="text"
-                      placeholder="City, state or remote"
-                      value={locationFilter}
-                      onChange={(e) => setLocationFilter(e.target.value)}
-                      className="search-input"
-                    />
-                  </div>
-                  <button className="search-btn">Search</button>
-                </div>
-                <div className="search-hint">
-                  Search by job title, company, or location. Filter results to match your priorities.
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="jobs-layout">
-            <aside className="sidebar">
-              <div className="sidebar-panel dashboard-sidebar">
-                <div className="sidebar-brand">
-                  <div className="brand-logo">J</div>
-                  <div>
-                    <h3>Jobie</h3>
-                    <p>Job Portal</p>
-                  </div>
-                </div>
-                <div className="sidebar-search-pill">
-                  <span>🔍</span>
+          <div className="jobseeker-section jsd-dashboard">
+            <section className="jsd-hero">
+              <div className="jsd-hero-copy">
+                <div className="jsd-eyebrow">Job seeker dashboard</div>
+                <h1>Move from search to shortlist in one smooth flow.</h1>
+                <p>Keep track of your active applications, discover fresh roles, and stay ahead with a premium overview.</p>
+                <div className="jsd-search-bar">
                   <input
                     type="text"
-                    placeholder="Search Job"
+                    placeholder="Search jobs, companies, or skills"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
+                  <div className="jsd-search-divider" />
+                  <button className="jsd-search-btn" type="button">Search</button>
                 </div>
-                <nav className="sidebar-nav">
-                  {['Dashboard', 'Search Job', 'Applications', 'Message', 'Statistics', 'News'].map((item) => (
-                    <button key={item} type="button" className="sidebar-nav-btn">
-                      {item}
+                <div className="jsd-category-pills">
+                  {['All Jobs', 'IT Jobs', 'Development', 'Design', 'Marketing', 'Sales'].map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`jsd-pill ${selectedCategory === cat ? 'is-active' : ''}`}
+                      onClick={() => setSelectedCategory(cat)}
+                    >
+                      {cat}
                     </button>
                   ))}
-                </nav>
-                <div className="sidebar-section">
-                  <h4>Saved sections</h4>
-                  <p className="sidebar-caption">Quick access to the pages you use most.</p>
-                  <div className="sidebar-category-list">
-                    {['Saved Jobs', 'Interview Prep', 'Profile', 'Settings'].map((item) => (
-                      <button key={item} className="category-btn">
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="sidebar-section">
-                  <h4>Categories</h4>
-                  <p className="sidebar-caption">Browse jobs by category</p>
-                  <div className="sidebar-category-list">
-                    {['All Jobs', 'IT Jobs', 'Development', 'Design', 'Marketing', 'Sales'].map((cat) => (
-                      <button
-                        key={cat}
-                        className={`category-btn ${selectedCategory === cat ? 'active' : ''}`}
-                        onClick={() => setSelectedCategory(cat)}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="sidebar-stat">
-                  {filteredJobs.length} open role{filteredJobs.length === 1 ? '' : 's'}
                 </div>
               </div>
-            </aside>
-
-            <div className="jobs-section">
-              <div className="jobs-container">
-                <h2>Recent Job Openings ({filteredJobs.length})</h2>
-                {filteredJobs.length === 0 ? (
-                  <p className="no-jobs">No jobs found. Try adjusting your search.</p>
-                ) : (
-                  <div className="jobs-grid">
-                    {filteredJobs.map((job) => (
-                      <div key={job.id} className="job-card">
-                        <div className="job-header">
-                          <h3>{job.title}</h3>
-                          <button type="button" className="job-company-link" onClick={() => openCompanyPage(job.company)}>
-                            {job.company}
-                          </button>
-                        </div>
-                        <p className="job-location">📍 {job.location}</p>
-                        {job.salary && <p className="job-salary">💰 {job.salary}</p>}
-                        <p className="job-description">{job.description.substring(0, 100)}...</p>
-                        <div className="job-footer">
-                          <button
-                            className="apply-btn"
-                            onClick={() => {
-                              if (userType === 'jobseeker') {
-                                openCompanyPage(job.company);
-                              } else {
-                                setSelectedJobId(job.id);
-                              }
-                            }}
-                          >
-                            Apply Now
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+              <div className="jsd-hero-gauge">
+                <div className="jsd-gauge">
+                  <svg className="jsd-gauge-svg" viewBox="0 0 120 120" aria-label="Application progress gauge">
+                    <circle className="jsd-gauge-track" cx="60" cy="60" r="48" strokeWidth="10" fill="none" />
+                    <circle
+                      className="jsd-gauge-progress"
+                      cx="60"
+                      cy="60"
+                      r="48"
+                      strokeWidth="10"
+                      fill="none"
+                      strokeLinecap="round"
+                      strokeDasharray={2 * Math.PI * 48}
+                      strokeDashoffset={2 * Math.PI * 48 * (1 - dashboardProgress / 100)}
+                      transform="rotate(-90 60 60)"
+                    />
+                  </svg>
+                  <div className="jsd-gauge-center">
+                    <div className="jsd-gauge-value">{dashboardProgress}%</div>
+                    <div className="jsd-gauge-label">Momentum</div>
                   </div>
-                )}
+                </div>
+                <div className="jsd-gauge-caption">Your pace is strong with {approvedApplications} approvals and {viewedApplications} recruiter views.</div>
+              </div>
+            </section>
+
+            <div className="jsd-stat-strip">
+              <div className="jsd-stat-card">
+                <span className="jsd-stat-label">Applications</span>
+                <strong className="jsd-stat-value">{totalApplications}</strong>
+              </div>
+              <div className="jsd-stat-card">
+                <span className="jsd-stat-label">Pending</span>
+                <strong className="jsd-stat-value">{pendingApplications}</strong>
+              </div>
+              <div className="jsd-stat-card">
+                <span className="jsd-stat-label">Viewed</span>
+                <strong className="jsd-stat-value">{viewedApplications}</strong>
+              </div>
+              <div className="jsd-stat-card jsd-stat-card--accent">
+                <span className="jsd-stat-label">Approved</span>
+                <strong className="jsd-stat-value">{approvedApplications}</strong>
               </div>
             </div>
-          </section>
+
+            <div className="jsd-mid-grid">
+              <div className="jsd-panel">
+                <div className="jsd-panel-header">
+                  <h3>Recent activity</h3>
+                  <span>Live</span>
+                </div>
+                {dashboardTrackerRows.length === 0 ? (
+                  <div className="jsd-empty">Applications will appear here as you apply.</div>
+                ) : (
+                  <ul className="jsd-tracker-list">
+                    {dashboardTrackerRows.map((row) => (
+                      <li key={row.id} className="jsd-tracker-row">
+                        <div className="jsd-tracker-info">
+                          <strong>{row.title}</strong>
+                          <span>{row.company}</span>
+                        </div>
+                        <div className="jsd-tracker-meta">
+                          <span className="jsd-tracker-date">{row.date}</span>
+                          <span className="jsd-status-pill" style={{ color: row.status === 'Approved' ? '#166534' : row.status === 'Viewed' ? '#1d4ed8' : '#b45309' }}>
+                            {row.status}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="jsd-panel">
+                <div className="jsd-panel-header">
+                  <h3>Opportunity mix</h3>
+                  <span>Today</span>
+                </div>
+                <ul className="jsd-legend">
+                  <li><span className="jsd-legend-dot" style={{ background: '#4F46E5' }} />Open roles<strong>{filteredJobs.length}</strong></li>
+                  <li><span className="jsd-legend-dot" style={{ background: '#7C3AED' }} />Applications<strong>{totalApplications}</strong></li>
+                  <li><span className="jsd-legend-dot" style={{ background: '#F59E0B' }} />Pending<strong>{pendingApplications}</strong></li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="jsd-recs-grid">
+              {featuredJobs.length === 0 ? (
+                <div className="jsd-panel">
+                  <div className="jsd-empty">No featured roles yet. Try a broader search.</div>
+                </div>
+              ) : (
+                featuredJobs.map((job) => (
+                  <div key={job.id} className="jsd-rec-card">
+                    <div className="jsd-rec-top">
+                      <h4>{job.title}</h4>
+                    </div>
+                    <button type="button" className="jsd-rec-company" onClick={() => openCompanyPage(job.company)}>
+                      {job.company}
+                    </button>
+                    <p className="jsd-rec-location">📍 {job.location}</p>
+                    {job.salary && <p className="jsd-rec-salary">💰 {job.salary}</p>}
+                    <button className="jsd-rec-cta" type="button" onClick={() => openCompanyPage(job.company)}>
+                      View role
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <section className="jobs-layout">
+              <aside className="sidebar">
+                <div className="sidebar-panel dashboard-sidebar">
+                  <div className="sidebar-brand">
+                    <div className="brand-logo">J</div>
+                    <div>
+                      <h3>Discover roles</h3>
+                      <p>Tailored to your search</p>
+                    </div>
+                  </div>
+                  <div className="sidebar-search-pill">
+                    <span>🔍</span>
+                    <input
+                      type="text"
+                      placeholder="Search jobs"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <div className="sidebar-section">
+                    <h4>Location</h4>
+                    <div className="sidebar-search-pill">
+                      <span>📍</span>
+                      <input
+                        type="text"
+                        placeholder="City or remote"
+                        value={locationFilter}
+                        onChange={(e) => setLocationFilter(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="sidebar-section">
+                    <h4>Saved sections</h4>
+                    <div className="sidebar-category-list">
+                      <button
+                        type="button"
+                        className={`category-btn ${showSavedOnly ? 'active' : ''}`}
+                        onClick={() => setShowSavedOnly((value) => !value)}
+                      >
+                        Saved Jobs
+                      </button>
+                      <button type="button" className="category-btn">
+                        Interview Prep
+                      </button>
+                      <button type="button" className="category-btn">
+                        Profile
+                      </button>
+                    </div>
+                  </div>
+                  <div className="sidebar-section">
+                    <h4>Categories</h4>
+                    <div className="sidebar-category-list">
+                      {['All Jobs', 'IT Jobs', 'Development', 'Design', 'Marketing', 'Sales'].map((cat) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          className={`category-btn ${selectedCategory === cat ? 'active' : ''}`}
+                          onClick={() => setSelectedCategory(cat)}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="sidebar-stat">
+                    {visibleJobs.length} open role{visibleJobs.length === 1 ? '' : 's'}
+                  </div>
+                </div>
+              </aside>
+
+              <div className="jobs-section">
+                <div className="jobs-container">
+                  <div className="job-list-header">
+                    <h2>Recent Job Openings ({visibleJobs.length})</h2>
+                    <button type="button" className="view-details-btn" onClick={() => { setShowSavedOnly(false); setSelectedCategory('All Jobs'); setSearchTerm(''); setLocationFilter(''); }}>
+                      Clear filters
+                    </button>
+                  </div>
+                  {visibleJobs.length === 0 ? (
+                    <p className="no-jobs">No jobs found. Try adjusting your search.</p>
+                  ) : (
+                    <div className="jobs-grid">
+                      {visibleJobs.map((job) => (
+                        <div key={job.id} className="job-card">
+                          <div className="job-header">
+                            <h3>{job.title}</h3>
+                            <button type="button" className="job-company-link" onClick={() => openCompanyPage(job.company)}>
+                              {job.company}
+                            </button>
+                          </div>
+                          <p className="job-location">📍 {job.location}</p>
+                          {job.salary && <p className="job-salary">💰 {job.salary}</p>}
+                          <p className="job-description">{(job.description || '').substring(0, 100)}...</p>
+                          <div className="job-footer">
+                            <BookmarkButton job={job} bookmarks={bookmarks} onChange={setBookmarks} />
+                            <button
+                              className="apply-btn"
+                              onClick={() => {
+                                if (userType === 'jobseeker') {
+                                  openCompanyPage(job.company);
+                                } else {
+                                  setSelectedJobId(job.id);
+                                }
+                              }}
+                            >
+                              Apply Now
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
           </div>
         )}
           <MyApplicationsModule
@@ -1133,6 +1282,24 @@ function App() {
                       required
                     />
                   </div>
+                  <div className="form-group">
+                    <label>Category</label>
+                    <input
+                      type="text"
+                      value={jobCategory}
+                      onChange={(e) => setJobCategory(e.target.value)}
+                      placeholder="e.g. Development"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Required Skills</label>
+                    <textarea
+                      value={jobRequiredSkills}
+                      onChange={(e) => setJobRequiredSkills(e.target.value)}
+                      placeholder="e.g. React, Django, REST APIs"
+                      rows="3"
+                    />
+                  </div>
                   <div className="form-actions">
                     <button type="submit" className="submit-btn">
                       {editingJobId ? 'Save Changes' : 'Post Job'}
@@ -1161,13 +1328,22 @@ function App() {
                           <p>{job.company} • {job.location}</p>
                           {job.salary && <p>Salary: {job.salary}</p>}
                           <p>{job.description.substring(0, 100)}{job.description.length > 100 ? '...' : ''}</p>
-                          <button
-                            type="button"
-                            className="edit-btn"
-                            onClick={() => startJobEdit(job)}
-                          >
-                            Edit job
-                          </button>
+                          <div className="posted-job-actions">
+                            <button
+                              type="button"
+                              className="edit-btn"
+                              onClick={() => startJobEdit(job)}
+                            >
+                              Edit job
+                            </button>
+                            <button
+                              type="button"
+                              className="reject-btn"
+                              onClick={() => handleDeleteJob(job.id)}
+                            >
+                              Delete job
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1370,6 +1546,15 @@ function App() {
                   rows="4"
                 />
               </div>
+              <div className="form-group">
+                <label>Skills</label>
+                <textarea
+                  value={applicantSkills}
+                  onChange={(e) => setApplicantSkills(e.target.value)}
+                  placeholder="e.g. React, Node.js, Python"
+                  rows="3"
+                />
+              </div>
               <div className="modal-footer">
                 <button className="cancel-btn" onClick={() => setSelectedJobId(null)}>
                   Cancel
@@ -1454,6 +1639,33 @@ function App() {
                 <section className="detail-section">
                   <h3>Cover Letter</h3>
                   <p>{selectedApplicationDetail.cover_letter || 'Not provided'}</p>
+                </section>
+
+                <section className="detail-section">
+                  <h3>Skills</h3>
+                  <p>{selectedApplicationDetail.skills || 'Not provided'}</p>
+                </section>
+
+                <section className="detail-section">
+                  <h3>Interview planning</h3>
+                  <InterviewSummary interviews={selectedApplicationDetail.interviews || []} />
+                  {userType === 'recruiter' ? (
+                    <InterviewScheduler
+                      applicationId={selectedApplicationDetail.id}
+                      existingInterviews={selectedApplicationDetail.interviews || []}
+                      onScheduled={(interview) => {
+                        setSelectedApplicationDetail((prev) => ({
+                          ...prev,
+                          interviews: [...(prev?.interviews || []), interview],
+                        }));
+                        setApplications((prev) => prev.map((application) => (
+                          application.id === selectedApplicationDetail.id
+                            ? { ...application, interviews: [...(application.interviews || []), interview] }
+                            : application
+                        )));
+                      }}
+                    />
+                  ) : null}
                 </section>
 
                 <section className="detail-section chat-section">

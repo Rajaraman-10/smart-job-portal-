@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db.models import Q
-from .models import Job, Application, Message, RecruiterProfile
+from .models import Job, Application, Message, RecruiterProfile, Bookmark, Interview
 from .serializers import (
     JobSerializer,
     ApplicationSerializer,
@@ -20,6 +20,8 @@ from .serializers import (
     UserSerializer,
     RegisterSerializer,
     LoginSerializer,
+    BookmarkSerializer,
+    InterviewSerializer,
 )
 
 
@@ -64,17 +66,22 @@ class JobViewSet(viewsets.ModelViewSet):
     permission_classes = [IsRecruiterOrReadOnly]
 
     def get_queryset(self):
+        category = self.request.query_params.get('category')
+        queryset = Job.objects.all().order_by('-posted_at')
+        if category and category != 'All Jobs':
+            queryset = queryset.filter(category__iexact=category)
+
         user = self.request.user
         if not user.is_authenticated:
-            return Job.objects.all().order_by('-posted_at')
+            return queryset
 
         if get_user_role(user) == 'recruiter':
             company_name = get_recruiter_company_name(user)
             if company_name:
-                return Job.objects.filter(company__iexact=company_name).order_by('-posted_at')
-            return Job.objects.filter(recruiter=user).order_by('-posted_at')
+                return queryset.filter(company__iexact=company_name)
+            return queryset.filter(recruiter=user)
 
-        return Job.objects.all().order_by('-posted_at')
+        return queryset
 
     def perform_create(self, serializer):
         if self.request.user.is_authenticated:
@@ -184,6 +191,43 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                 'applications': ApplicationSerializer(applications, many=True, context={'request': request}).data,
             })
         return Response(grouped)
+
+
+class BookmarkViewSet(viewsets.ModelViewSet):
+    serializer_class = BookmarkSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get_queryset(self):
+        return Bookmark.objects.filter(user=self.request.user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class InterviewViewSet(viewsets.ModelViewSet):
+    queryset = Interview.objects.all().order_by('-created_at')
+    serializer_class = InterviewSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def perform_create(self, serializer):
+        interview = serializer.save()
+        application = interview.application
+        send_mail(
+            subject=f"Interview scheduled — {application.job.title} at {application.job.company}",
+            message=(
+                f"Hi {application.applicant_name},\n\n"
+                f"An interview has been scheduled for your application to {application.job.title}.\n"
+                f"When: {interview.scheduled_at}\n"
+                f"Mode: {interview.mode}\n"
+                f"Details: {interview.location_or_link or interview.notes}\n\n"
+                f"Good luck!"
+            ),
+            from_email=None,
+            recipient_list=[application.applicant_email],
+            fail_silently=True,
+        )
 
 
 class MessageViewSet(viewsets.ModelViewSet):
