@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { register, login } from './services/api';
+import { register, requestOtp, verifyOtp } from './services/api';
 import './Login.css';
 
 function Login({ onLoginSuccess }) {
@@ -8,6 +8,8 @@ function Login({ onLoginSuccess }) {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpStep, setOtpStep] = useState('email');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -82,21 +84,37 @@ function Login({ onLoginSuccess }) {
     }
   };
 
-  const handleLogin = async (e) => {
+  const handleRequestOtp = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
     setLoading(true);
     try {
-      const res = await login(email, password);
-      
-      // Verify that user's role matches selected role
+      await requestOtp(email);
+      setMessage('✅ OTP sent to your email.');
+      setOtpStep('otp');
+      setOtp('');
+    } catch (err) {
+      setError(`❌ ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setLoading(true);
+    try {
+      const res = await verifyOtp(email, otp);
+
       if (res.user_type !== selectedRole) {
         setError(`❌ This account is registered as a ${res.user_type === 'recruiter' ? 'Recruiter' : 'Job Seeker'}. Please login with the correct role.`);
         setLoading(false);
         return;
       }
-      
+
       localStorage.setItem('accessToken', res.access);
       localStorage.setItem('refreshToken', res.refresh);
       localStorage.setItem('userType', res.user_type);
@@ -547,7 +565,7 @@ function Login({ onLoginSuccess }) {
             {error && <div className="error-message">{error}</div>}
             {message && <div className="success-message">{message}</div>}
 
-            <form onSubmit={handleLogin}>
+            <form onSubmit={otpStep === 'email' ? handleRequestOtp : handleVerifyOtp}>
               <div className="form-group">
                 <label htmlFor="email">Email ID<span className="required">*</span></label>
                 <input 
@@ -561,22 +579,38 @@ function Login({ onLoginSuccess }) {
                 />
               </div>
 
-              <div className="form-group">
-                <label htmlFor="password">Password<span className="required">*</span></label>
-                <input 
-                  id="password" 
-                  type="password" 
-                  placeholder="Enter your password" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                  disabled={loading} 
-                  required 
-                />
-              </div>
+              {otpStep === 'otp' && (
+                <div className="form-group">
+                  <label htmlFor="otp">OTP<span className="required">*</span></label>
+                  <input 
+                    id="otp" 
+                    type="text" 
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="Enter 6-digit OTP" 
+                    value={otp} 
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))} 
+                    disabled={loading} 
+                    required 
+                  />
+                </div>
+              )}
 
               <button type="submit" className="btn-submit" disabled={loading}>
-                {loading ? 'Logging in...' : 'Login'}
+                {loading ? (otpStep === 'email' ? 'Sending OTP...' : 'Verifying OTP...') : (otpStep === 'email' ? 'Send OTP' : 'Verify & Login')}
               </button>
+
+              {otpStep === 'otp' && (
+                <button
+                  type="button"
+                  className="btn-google"
+                  onClick={handleRequestOtp}
+                  disabled={loading}
+                  style={{ marginTop: '0.75rem' }}
+                >
+                  Resend OTP
+                </button>
+              )}
             </form>
 
             <div className="form-divider">Or</div>

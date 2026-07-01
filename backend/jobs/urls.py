@@ -8,6 +8,8 @@ from .views import (
     InterviewViewSet,
     RegisterView,
     LoginView,
+    RequestOTPView,
+    VerifyOTPView,
 )
 
 router = DefaultRouter()
@@ -21,4 +23,6 @@ urlpatterns = [
     path('', include(router.urls)),
     path('auth/register/', RegisterView.as_view(), name='register'),
     path('auth/login/', LoginView.as_view(), name='login'),
+    path('auth/request-otp/', RequestOTPView.as_view(), name='request-otp'),
+    path('auth/verify-otp/', VerifyOTPView.as_view(), name='verify-otp'),
 ]

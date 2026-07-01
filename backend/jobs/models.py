@@ -5,6 +5,25 @@ from django.utils import timezone
 import random
 import string
 
+
+class LoginOTP(models.Model):
+    email = models.EmailField()
+    code = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used = models.BooleanField(default=False)
+
+    def is_valid(self):
+        from datetime import timedelta
+        return not self.is_used and timezone.now() < self.created_at + timedelta(minutes=5)
+
+    @staticmethod
+    def generate_code():
+        return f"{random.randint(100000, 999999)}"
+
+    def __str__(self):
+        return f"OTP for {self.email}"
+
+
 class OTP(models.Model):
     mobile_number = models.CharField(max_length=15, unique=True)
     otp_code = models.CharField(max_length=6)

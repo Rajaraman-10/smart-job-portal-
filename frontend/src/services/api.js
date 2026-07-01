@@ -94,6 +94,42 @@ export async function login(email, password) {
   return contentType.includes('application/json') ? response.json() : { message: await response.text() };
 }
 
+export async function requestOtp(email) {
+  const response = await fetch(`${API_BASE_URL}/auth/request-otp/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  const contentType = response.headers.get('content-type') || '';
+  if (!response.ok) {
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      throw new Error(data.error || data.detail || 'Failed to send OTP');
+    }
+    const text = await response.text();
+    throw new Error(text || 'Failed to send OTP');
+  }
+  return contentType.includes('application/json') ? response.json() : { message: await response.text() };
+}
+
+export async function verifyOtp(email, otp) {
+  const response = await fetch(`${API_BASE_URL}/auth/verify-otp/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, otp }),
+  });
+  const contentType = response.headers.get('content-type') || '';
+  if (!response.ok) {
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      throw new Error(data.error || data.detail || 'Invalid OTP');
+    }
+    const text = await response.text();
+    throw new Error(text || 'Invalid OTP');
+  }
+  return contentType.includes('application/json') ? response.json() : { message: await response.text() };
+}
+
 export async function fetchJobs() {
   const response = await fetch(`${API_BASE_URL}/jobs/`, {
     headers: {

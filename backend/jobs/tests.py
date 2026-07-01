@@ -1,9 +1,12 @@
+from unittest.mock import patch
+
 from django.test import TestCase
 from django.contrib.auth.models import User
+from django.core import mail
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Application, Job, Company, RecruiterProfile
+from .models import Application, Job, Company, RecruiterProfile, LoginOTP
 
 
 class AuthFlowTests(TestCase):
@@ -135,3 +138,66 @@ class AuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'Viewed')
         self.assertIsNotNone(response.json()['viewed_at'])
+
+    def test_request_otp_sends_email_and_creates_code(self):
+        response = self.client.post(
+            '/api/auth/request-otp/',
+            {'email': 'candidate@example.com'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(LoginOTP.objects.filter(email='candidate@example.com').exists())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('OTP', mail.outbox[0].subject)
+
+    def test_request_otp_handles_email_delivery_failures(self):
+        with patch('jobs.views.send_mail', side_effect=Exception('SMTP failed')):
+            response = self.client.post(
+                '/api/auth/request-otp/',
+                {'email': 'fallback@example.com'},
+                content_type='application/json',
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(LoginOTP.objects.filter(email='fallback@example.com').exists())
+
+    def test_verify_otp_returns_tokens_for_existing_user(self):
+        otp = LoginOTP.objects.create(email='verified@example.com', code='123456')
+
+        response = self.client.post(
+            '/api/auth/verify-otp/',
+            {'email': 'verified@example.com', 'otp': otp.code},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.json())
+        self.assertIn('refresh', response.json())
+        self.assertTrue(User.objects.filter(email='verified@example.com').exists())
+
+    def test_recruiter_status_change_sends_email(self):
+        applicant = User.objects.create_user(username='applicant2@example.com', email='applicant2@example.com', password='secret123')
+        recruiter = User.objects.create_user(username='recruiter2@example.com', email='recruiter2@example.com', password='secret123', last_name='recruiter')
+        job = Job.objects.create(recruiter=recruiter, title='Data Analyst', company='Acme', location='Remote', description='Analyze data')
+        application = Application.objects.create(
+            job=job,
+            applicant=applicant,
+            applicant_name='Applicant Two',
+            applicant_email='applicant2@example.com',
+            status='Pending',
+        )
+
+        client = APIClient()
+        refresh = RefreshToken.for_user(recruiter)
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = client.patch(
+            f'/api/applications/{application.id}/',
+            {'status': 'Approved'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('Your application status', mail.outbox[0].subject)

@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db.models import Q
-from .models import Job, Application, Message, RecruiterProfile, Bookmark, Interview
+from .models import Job, Application, Message, RecruiterProfile, Bookmark, Interview, LoginOTP
 from .serializers import (
     JobSerializer,
     ApplicationSerializer,
@@ -149,6 +149,34 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             pass
 
         return application
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        old_status = instance.status
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        new_status = serializer.validated_data.get('status', instance.status)
+        if old_status != new_status and new_status in ['Approved', 'Rejected']:
+            recipient = instance.applicant_email or instance.applicant.email
+            if recipient:
+                subject = f"Your application status: {new_status}"
+                message = (
+                    f"Hi {instance.applicant_name or instance.applicant.first_name or instance.applicant.username},\n\n"
+                    f"Your application for '{instance.job.title}' has been {new_status}.\n\n"
+                    f"Regards,\nSmart Job Portal Team"
+                )
+                send_mail(
+                    subject,
+                    message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [recipient],
+                    fail_silently=True,
+                )
+
+        return Response(serializer.data)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -334,6 +362,56 @@ class MessageViewSet(viewsets.ModelViewSet):
         message.is_read = True
         message.save(update_fields=['is_read'])
         return Response({'detail': 'Marked read'})
+
+
+class RequestOTPView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email')
+        if not email:
+            return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        code = LoginOTP.generate_code()
+        LoginOTP.objects.create(email=email, code=code)
+
+        try:
+            send_mail(
+                subject='Your Smart Job Portal OTP',
+                message=f'Your OTP is {code}. It expires in 5 minutes.',
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+        except Exception:
+            pass
+
+        return Response({'message': 'OTP sent to your email'}, status=status.HTTP_200_OK)
+
+
+class VerifyOTPView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email')
+        code = request.data.get('otp')
+
+        otp_obj = LoginOTP.objects.filter(email=email, code=code).order_by('-created_at').first()
+        if not otp_obj or not otp_obj.is_valid():
+            return Response({'error': 'Invalid or expired OTP'}, status=status.HTTP_400_BAD_REQUEST)
+
+        otp_obj.is_used = True
+        otp_obj.save(update_fields=['is_used'])
+
+        user, _ = User.objects.get_or_create(email=email, defaults={'username': email})
+        tokens = get_tokens_for_user(user, get_user_role(user))
+        return Response({
+            'message': 'OTP verified',
+            'access': tokens['access'],
+            'refresh': tokens['refresh'],
+            'user_type': tokens['user_type'],
+            'user': tokens['user'],
+        }, status=status.HTTP_200_OK)
 
 
 class RegisterView(APIView):
