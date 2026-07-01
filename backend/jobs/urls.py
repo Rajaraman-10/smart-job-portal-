@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     JobViewSet,
     ApplicationViewSet,
+    MessageViewSet,
     RegisterView,
     LoginView,
 )
@@ -10,6 +11,7 @@ from .views import (
 router = DefaultRouter()
 router.register(r'jobs', JobViewSet)
 router.register(r'applications', ApplicationViewSet, basename='application')
+router.register(r'messages', MessageViewSet, basename='message')
 
 urlpatterns = [
     path('', include(router.urls)),

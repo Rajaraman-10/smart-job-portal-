@@ -16,19 +16,8 @@ function MyApplicationsModule({
   setApplicationsView,
   applicationsSearch,
   setApplicationsSearch,
-  totalApplications,
-  pendingApplications,
-  viewedApplications,
-  approvedApplications,
-  rejectedApplications,
+  onViewDetails,
 }) {
-  const summaryCards = [
-    { label: 'Total', value: totalApplications, tone: 'primary' },
-    { label: 'Pending', value: pendingApplications, tone: 'pending' },
-    { label: 'Viewed', value: viewedApplications, tone: 'viewed' },
-    { label: 'Approved', value: approvedApplications, tone: 'approved' },
-  ];
-
   return (
     <section className="my-applications-section">
       <div className="jobs-container applications-module">
@@ -46,15 +35,6 @@ function MyApplicationsModule({
           >
             {showMyApplications ? 'Hide applications' : 'Show applications'}
           </button>
-        </div>
-
-        <div className="applications-metrics">
-          {summaryCards.map((item) => (
-            <div key={item.label} className={`metric-card metric-${item.tone}`}>
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </div>
-          ))}
         </div>
 
         {showMyApplications ? (
@@ -106,6 +86,9 @@ function MyApplicationsModule({
                           <div>
                             <h3>{application.job_title || `Job ${application.job}`}</h3>
                             <p className="job-company">{application.job_company}</p>
+                            <div className={`application-card-unread ${application.unread_message_count ? 'active' : 'inactive'}`}>
+                              {application.unread_message_count ? `${application.unread_message_count} unread` : 'No unread'}
+                            </div>
                           </div>
                         </div>
                         <span className={`status-badge ${application.status.toLowerCase()}`}>
@@ -131,7 +114,13 @@ function MyApplicationsModule({
                       </div>
 
                       <div className="application-card-footer">
-                        <span className="application-card-tag">Application</span>
+                        <button
+                          type="button"
+                          className="view-details-btn"
+                          onClick={() => onViewDetails(application.id)}
+                        >
+                          View details
+                        </button>
                         <span className="application-card-tag subtle">{application.status === 'Viewed' ? 'Reviewed' : 'In progress'}</span>
                       </div>
 

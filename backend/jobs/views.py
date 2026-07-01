@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.views import APIView
@@ -11,14 +12,24 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db.models import Q
-from .models import Job, Application
+from .models import Job, Application, Message, RecruiterProfile
 from .serializers import (
     JobSerializer,
     ApplicationSerializer,
+    MessageSerializer,
     UserSerializer,
     RegisterSerializer,
     LoginSerializer,
 )
+
+
+def get_user_role(user):
+    return user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+
+
+def get_recruiter_company_name(user):
+    profile = getattr(user, 'recruiter_profile', None)
+    return profile.company.name if profile and profile.company else None
 
 
 def get_tokens_for_user(user, user_type='jobseeker'):
@@ -52,11 +63,26 @@ class JobViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsRecruiterOrReadOnly]
 
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_authenticated:
+            return Job.objects.all().order_by('-posted_at')
+
+        if get_user_role(user) == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            if company_name:
+                return Job.objects.filter(company__iexact=company_name).order_by('-posted_at')
+            return Job.objects.filter(recruiter=user).order_by('-posted_at')
+
+        return Job.objects.all().order_by('-posted_at')
+
     def perform_create(self, serializer):
         if self.request.user.is_authenticated:
-            serializer.save(recruiter=self.request.user)
+            user = self.request.user
+            company_name = serializer.validated_data.get('company') or get_recruiter_company_name(user)
+            serializer.save(recruiter=user, company=company_name or user.username)
         else:
-            raise PermissionError('Authentication required to post jobs')
+            raise PermissionDenied('Authentication required to post jobs')
 
 class ApplicationViewSet(viewsets.ModelViewSet):
     serializer_class = ApplicationSerializer
@@ -70,9 +96,12 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         - Job Seekers: See their own applications
         """
         user = self.request.user
-        user_type = user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+        user_type = get_user_role(user)
         
         if user_type == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            if company_name:
+                return Application.objects.filter(job__company__iexact=company_name).order_by('-applied_at')
             return Application.objects.filter(job__recruiter=user).order_by('-applied_at')
         return Application.objects.filter(applicant=user).order_by('-applied_at')
 
@@ -117,34 +146,150 @@ class ApplicationViewSet(viewsets.ModelViewSet):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         user = request.user
-        user_type = user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+        user_type = get_user_role(user)
+        company_name = get_recruiter_company_name(user)
+        has_company_access = False
+        if user_type == 'recruiter':
+            has_company_access = company_name and instance.job.company.lower() == company_name.lower()
 
-        if user_type == 'recruiter' and instance.job.recruiter == user and instance.status == 'Pending':
+        if user_type == 'recruiter' and (instance.job.recruiter == user or has_company_access) and instance.status == 'Pending':
             instance.status = 'Viewed'
             instance.viewed_at = timezone.now()
             instance.save(update_fields=['status', 'viewed_at'])
 
+        if instance.messages.filter(is_read=False).exclude(sender=request.user).exists():
+            instance.messages.filter(is_read=False).exclude(sender=request.user).update(is_read=True)
+
         serializer = self.get_serializer(instance)
-        return Response(serializer.data)
+        response_data = serializer.data
+        response_data['unread_message_count'] = instance.messages.filter(is_read=False).exclude(sender=request.user).count()
+        return Response(response_data)
 
     @action(detail=False, methods=['get'], url_path='grouped-by-job')
     def grouped_by_job(self, request):
         """Return recruiter applications grouped by posted job."""
         user = request.user
-        user_type = user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+        user_type = get_user_role(user)
         
         if user_type != 'recruiter':
             return Response({'detail': 'Only recruiters can view grouped job applications.'}, status=status.HTTP_403_FORBIDDEN)
 
-        jobs = Job.objects.filter(recruiter=user).order_by('-posted_at')
+        company_name = get_recruiter_company_name(user)
+        jobs = Job.objects.filter(company__iexact=company_name).order_by('-posted_at') if company_name else Job.objects.filter(recruiter=user).order_by('-posted_at')
         grouped = []
         for job in jobs:
             applications = Application.objects.filter(job=job).order_by('-applied_at')
             grouped.append({
                 'job': JobSerializer(job).data,
-                'applications': ApplicationSerializer(applications, many=True).data,
+                'applications': ApplicationSerializer(applications, many=True, context={'request': request}).data,
             })
         return Response(grouped)
+
+
+class MessageViewSet(viewsets.ModelViewSet):
+    queryset = Message.objects.all()
+    serializer_class = MessageSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get_queryset(self):
+        user = self.request.user
+        if get_user_role(user) == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            if company_name:
+                queryset = Message.objects.filter(application__job__company__iexact=company_name)
+            else:
+                queryset = Message.objects.filter(application__job__recruiter=user)
+        else:
+            queryset = Message.objects.filter(application__applicant=user)
+
+        application_id = self.request.query_params.get('application')
+        if application_id:
+            queryset = queryset.filter(application_id=application_id)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        application = serializer.validated_data['application']
+        user = self.request.user
+        is_recruiter = get_user_role(user) == 'recruiter'
+
+        if is_recruiter:
+            company_name = get_recruiter_company_name(user)
+            if company_name and application.job.company.lower() != company_name.lower():
+                raise PermissionDenied('You cannot message on this application.')
+            if application.job.recruiter != user and not (company_name and application.job.company.lower() == company_name.lower()):
+                raise PermissionDenied('You cannot message on this application.')
+        if not is_recruiter and application.applicant != user:
+            raise PermissionDenied('You cannot message on this application.')
+        if application.status not in ['Viewed', 'Approved', 'Rejected']:
+            raise PermissionDenied('Messages may only be sent after the recruiter has viewed the application.')
+
+        serializer.save(sender=user)
+
+    @action(detail=False, methods=['get'], url_path='unread-count')
+    def unread_count(self, request):
+        user = request.user
+        if get_user_role(user) == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            if company_name:
+                unread = Message.objects.filter(
+                    application__job__company__iexact=company_name,
+                    is_read=False,
+                ).exclude(sender=user).count()
+            else:
+                unread = Message.objects.filter(
+                    application__job__recruiter=user,
+                    is_read=False,
+                ).exclude(sender=user).count()
+        else:
+            unread = Message.objects.filter(
+                application__applicant=user,
+                is_read=False,
+            ).exclude(sender=user).count()
+        return Response({'unread_count': unread})
+
+    @action(detail=False, methods=['post'], url_path='mark-all-read')
+    def mark_all_read(self, request):
+        application_id = request.data.get('application')
+        if not application_id:
+            return Response({'detail': 'Application ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        if get_user_role(user) == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            if company_name:
+                allowed = Application.objects.filter(id=application_id, job__company__iexact=company_name).exists()
+            else:
+                allowed = Application.objects.filter(id=application_id, job__recruiter=user).exists()
+        else:
+            allowed = Application.objects.filter(id=application_id, applicant=user).exists()
+
+        if not allowed:
+            return Response({'detail': 'Not allowed to mark messages for this application.'}, status=status.HTTP_403_FORBIDDEN)
+
+        updated_count = Message.objects.filter(
+            application_id=application_id,
+            is_read=False
+        ).exclude(sender=user).update(is_read=True)
+        return Response({'marked_count': updated_count})
+
+    @action(detail=True, methods=['post'], url_path='mark-read')
+    def mark_read(self, request, pk=None):
+        message = self.get_object()
+        user = request.user
+        if get_user_role(user) == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            allowed = message.application.job.recruiter == user or (company_name and message.application.job.company.lower() == company_name.lower())
+        else:
+            allowed = message.application.applicant == user
+
+        if not allowed:
+            return Response({'detail': 'Not allowed to mark this message.'}, status=status.HTTP_403_FORBIDDEN)
+
+        message.is_read = True
+        message.save(update_fields=['is_read'])
+        return Response({'detail': 'Marked read'})
 
 
 class RegisterView(APIView):
@@ -183,7 +328,7 @@ class LoginView(APIView):
             if user is None:
                 return Response({'error': 'Invalid email or password'}, status=status.HTTP_400_BAD_REQUEST)
             
-            user_type = user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+            user_type = get_user_role(user)
             tokens = get_tokens_for_user(user, user_type)
             
             return Response({

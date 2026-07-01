@@ -3,10 +3,48 @@ from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Application, Job
+from .models import Application, Job, Company, RecruiterProfile
 
 
 class AuthFlowTests(TestCase):
+    def test_recruiters_from_same_company_share_company_jobs(self):
+        company = Company.objects.create(name='Acme Corp')
+        first_recruiter = User.objects.create_user(
+            username='first.recruiter@example.com',
+            email='first.recruiter@example.com',
+            password='secret123',
+            last_name='recruiter',
+        )
+        second_recruiter = User.objects.create_user(
+            username='second.recruiter@example.com',
+            email='second.recruiter@example.com',
+            password='secret123',
+            last_name='recruiter',
+        )
+        other_recruiter = User.objects.create_user(
+            username='other.recruiter@example.com',
+            email='other.recruiter@example.com',
+            password='secret123',
+            last_name='recruiter',
+        )
+        RecruiterProfile.objects.create(user=first_recruiter, company=company)
+        RecruiterProfile.objects.create(user=second_recruiter, company=company)
+        RecruiterProfile.objects.create(user=other_recruiter, company=Company.objects.create(name='Other Inc'))
+
+        Job.objects.create(recruiter=first_recruiter, title='Lead Engineer', company='Acme Corp', location='Remote', description='Build software')
+        Job.objects.create(recruiter=other_recruiter, title='Designer', company='Other Inc', location='Remote', description='Design things')
+
+        client = APIClient()
+        refresh = RefreshToken.for_user(second_recruiter)
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = client.get('/api/jobs/')
+
+        self.assertEqual(response.status_code, 200)
+        job_ids = [job['id'] for job in response.json()]
+        self.assertIn(1, job_ids)
+        self.assertNotIn(2, job_ids)
+
     def test_login_accepts_case_insensitive_email(self):
         register_response = self.client.post(
             '/api/auth/register/',
@@ -59,6 +97,29 @@ class AuthFlowTests(TestCase):
 
         self.assertEqual(second_response.status_code, 400)
         self.assertIn('already registered', str(second_response.json()).lower())
+
+    def test_recruiter_registration_creates_company_and_profile(self):
+        response = self.client.post(
+            '/api/auth/register/',
+            {
+                'name': 'Recruiter Person',
+                'email': 'recruiter-registration@example.com',
+                'password': 'secret123',
+                'user_type': 'recruiter',
+                'company_name': 'Acme Labs',
+                'company_location': 'Remote',
+                'company_size': '50-200',
+                'company_description': 'We build labs',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        user = User.objects.get(email='recruiter-registration@example.com')
+        company = Company.objects.get(name='Acme Labs')
+        profile = RecruiterProfile.objects.get(user=user)
+        self.assertEqual(profile.company, company)
+        self.assertEqual(company.location, 'Remote')
 
     def test_recruiter_view_marks_application_as_viewed(self):
         applicant = User.objects.create_user(username='applicant@example.com', email='applicant@example.com', password='secret123')

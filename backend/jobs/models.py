@@ -25,6 +25,7 @@ class Job(models.Model):
     location = models.CharField(max_length=255)
     salary = models.CharField(max_length=100, blank=True, default='')
     description = models.TextField()
+    company_meta = models.JSONField(blank=True, null=True, default=dict)
     posted_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -55,3 +56,41 @@ class Application(models.Model):
 
     def __str__(self):
         return f"Application by {self.applicant_name or self.applicant} for {self.job}"
+
+
+class Company(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    logo = models.CharField(max_length=512, blank=True, default='')
+    cover_image = models.CharField(max_length=512, blank=True, default='')
+    website = models.URLField(blank=True, default='')
+    industry = models.CharField(max_length=255, blank=True, default='')
+    size = models.CharField(max_length=100, blank=True, default='')
+    description = models.TextField(blank=True, default='')
+    location = models.CharField(max_length=255, blank=True, default='')
+    employees = models.CharField(max_length=100, blank=True, default='')
+    rating = models.DecimalField(max_digits=3, decimal_places=2, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+class RecruiterProfile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='recruiter_profile')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='recruiters')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user} -> {self.company}"
+
+class Message(models.Model):
+    application = models.ForeignKey(Application, related_name='messages', on_delete=models.CASCADE)
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    content = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Message from {self.sender} on {self.application}"

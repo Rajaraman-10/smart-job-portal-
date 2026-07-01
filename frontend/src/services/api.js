@@ -20,17 +20,55 @@ const authHeaders = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-export async function register(name, email, password, userType) {
+const extractApiError = (data, fallback) => {
+  if (!data) {
+    return fallback;
+  }
+  if (typeof data === 'string') {
+    return data;
+  }
+  if (data.error) {
+    return data.error;
+  }
+  if (data.detail) {
+    return data.detail;
+  }
+  if (Array.isArray(data)) {
+    return data.join(', ');
+  }
+  if (typeof data === 'object') {
+    const firstValue = Object.values(data)[0];
+    if (Array.isArray(firstValue)) {
+      return firstValue.join(', ');
+    }
+    if (typeof firstValue === 'string') {
+      return firstValue;
+    }
+    return JSON.stringify(data);
+  }
+  return fallback;
+};
+
+export async function register(name, email, password, userType, companyName = '', companyDetails = {}) {
+  const payload = {
+    name,
+    email,
+    password,
+    user_type: userType,
+    company_name: companyName,
+    ...companyDetails,
+  };
+
   const response = await fetch(`${API_BASE_URL}/auth/register/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, password, user_type: userType }),
+    body: JSON.stringify(payload),
   });
   const contentType = response.headers.get('content-type') || '';
   if (!response.ok) {
     if (contentType.includes('application/json')) {
       const data = await response.json();
-      throw new Error(data.error || data.detail || 'Registration failed');
+      throw new Error(extractApiError(data, 'Registration failed'));
     }
     const text = await response.text();
     throw new Error(text || 'Registration failed');
@@ -138,6 +176,36 @@ export async function createJob(jobData) {
   return response.json();
 }
 
+export async function updateJob(jobId, jobData) {
+  const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(jobData),
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to update job';
+    if (response.status === 401 || response.status === 403) {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('userType');
+      localStorage.removeItem('user');
+      errorMsg = 'Your session expired. Please log in again as a recruiter.';
+    } else {
+      try {
+        const errorData = await response.json();
+        errorMsg = errorData.detail || errorData.error || JSON.stringify(errorData);
+      } catch (e) {
+        errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+      }
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
 export async function createApplication(application) {
   const isFormData = application instanceof FormData;
   const headers = isFormData
@@ -161,6 +229,30 @@ export async function createApplication(application) {
     }
     throw new Error(errorMsg);
   }
+  return response.json();
+}
+
+export async function createMessage(applicationId, message) {
+  const response = await fetch(`${API_BASE_URL}/messages/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ application: applicationId, content: message }),
+  });
+
+  if (!response.ok) {
+    let errorMsg = 'Failed to send message';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || errorData.error || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+
   return response.json();
 }
 

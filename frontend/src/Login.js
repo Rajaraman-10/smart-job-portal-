@@ -10,6 +10,16 @@ function Login({ onLoginSuccess }) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [companyWebsite, setCompanyWebsite] = useState('');
+  const [companyIndustry, setCompanyIndustry] = useState('');
+  const [companySize, setCompanySize] = useState('');
+  const [companyDescription, setCompanyDescription] = useState('');
+  const [companyLocation, setCompanyLocation] = useState('');
+  const [companyLogo, setCompanyLogo] = useState('');
+  const [companyCoverImage, setCompanyCoverImage] = useState('');
+  const [companyEmployees, setCompanyEmployees] = useState('');
+  const [companyRating, setCompanyRating] = useState('');
   const [mobile, setMobile] = useState('');
   const [workStatus, setWorkStatus] = useState('experienced');
   const [loading, setLoading] = useState(false);
@@ -33,10 +43,33 @@ function Login({ onLoginSuccess }) {
 
     setLoading(true);
     try {
-      const res = await register(name, email, password, selectedRole);
+      const companyDetails = isJobSeeker
+        ? {}
+        : {
+            company_website: companyWebsite,
+            company_industry: companyIndustry,
+            company_size: companySize,
+            company_description: companyDescription,
+            company_location: companyLocation,
+            company_logo: companyLogo,
+            company_cover_image: companyCoverImage,
+            company_employees: companyEmployees,
+            company_rating: companyRating ? Number(companyRating) : null,
+          };
+      const res = await register(name, email, password, selectedRole, isJobSeeker ? '' : companyName, companyDetails);
       setMessage('✅ Registration successful! Please log in.');
       setIsRegister(false);
       setName('');
+      setCompanyName('');
+      setCompanyWebsite('');
+      setCompanyIndustry('');
+      setCompanySize('');
+      setCompanyDescription('');
+      setCompanyLocation('');
+      setCompanyLogo('');
+      setCompanyCoverImage('');
+      setCompanyEmployees('');
+      setCompanyRating('');
       setEmail('');
       setPassword('');
       setConfirmPassword('');
@@ -214,6 +247,135 @@ function Login({ onLoginSuccess }) {
                   required 
                 />
               </div>
+
+              {!isJobSeeker && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="companyName">Company Name<span className="required">*</span></label>
+                    <input
+                      id="companyName"
+                      type="text"
+                      placeholder="Enter your company name"
+                      value={companyName}
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      disabled={loading}
+                      required
+                    />
+                    <small>Recruiters from the same company will share one dashboard.</small>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="companyWebsite">Company Website</label>
+                    <input
+                      id="companyWebsite"
+                      type="url"
+                      placeholder="https://yourcompany.com"
+                      value={companyWebsite}
+                      onChange={(e) => setCompanyWebsite(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="companyIndustry">Industry</label>
+                    <input
+                      id="companyIndustry"
+                      type="text"
+                      placeholder="e.g. Software"
+                      value={companyIndustry}
+                      onChange={(e) => setCompanyIndustry(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="companySize">Company Size</label>
+                    <input
+                      id="companySize"
+                      type="text"
+                      placeholder="e.g. 50-200 employees"
+                      value={companySize}
+                      onChange={(e) => setCompanySize(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="companyLocation">Headquarters / Main Location</label>
+                    <input
+                      id="companyLocation"
+                      type="text"
+                      placeholder="e.g. New York, NY or Remote (HQ)"
+                      value={companyLocation}
+                      onChange={(e) => setCompanyLocation(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="companyEmployees">Employee Count</label>
+                    <input
+                      id="companyEmployees"
+                      type="text"
+                      placeholder="e.g. 80-100"
+                      value={companyEmployees}
+                      onChange={(e) => setCompanyEmployees(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="companyRating">Rating</label>
+                    <input
+                      id="companyRating"
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="5"
+                      placeholder="4.7"
+                      value={companyRating}
+                      onChange={(e) => setCompanyRating(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="companyLogo">Company Logo URL</label>
+                    <input
+                      id="companyLogo"
+                      type="url"
+                      placeholder="https://.../logo.png"
+                      value={companyLogo}
+                      onChange={(e) => setCompanyLogo(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="companyCoverImage">Company Cover Image URL</label>
+                    <input
+                      id="companyCoverImage"
+                      type="url"
+                      placeholder="https://.../cover.jpg"
+                      value={companyCoverImage}
+                      onChange={(e) => setCompanyCoverImage(e.target.value)}
+                      disabled={loading}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="companyDescription">About the Company</label>
+                    <textarea
+                      id="companyDescription"
+                      placeholder="Describe your company, mission, and culture"
+                      value={companyDescription}
+                      onChange={(e) => setCompanyDescription(e.target.value)}
+                      disabled={loading}
+                      rows="4"
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="form-group">
                 <label htmlFor="email">Email ID<span className="required">*</span></label>
