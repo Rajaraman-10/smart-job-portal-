@@ -383,8 +383,12 @@ class RequestOTPView(APIView):
                 recipient_list=[email],
                 fail_silently=False,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            error_message = str(e)
+            return Response(
+                {'error': 'Failed to send OTP email', 'details': error_message},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         return Response({'message': 'OTP sent to your email'}, status=status.HTTP_200_OK)
 
