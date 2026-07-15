@@ -130,6 +130,24 @@ export async function verifyOtp(email, otp) {
   return contentType.includes('application/json') ? response.json() : { message: await response.text() };
 }
 
+export async function loginWithGoogle(idToken, userType) {
+  const response = await fetch(`${API_BASE_URL}/auth/google-login/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id_token: idToken, user_type: userType }),
+  });
+  const contentType = response.headers.get('content-type') || '';
+  if (!response.ok) {
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      throw new Error(data.error || data.detail || 'Google login failed');
+    }
+    const text = await response.text();
+    throw new Error(text || 'Google login failed');
+  }
+  return contentType.includes('application/json') ? response.json() : { message: await response.text() };
+}
+
 export async function fetchJobs() {
   const response = await fetch(`${API_BASE_URL}/jobs/`, {
     headers: {

@@ -11,3 +11,8 @@ boto3
 django-storages
 whitenoise
 gunicorn
+scikit-learn
+numpy
+openai
+python-docx
+pdfplumber

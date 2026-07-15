@@ -6,6 +6,8 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticate
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 from django.conf import settings
 from django.core.mail import send_mail
 from django.utils import timezone
@@ -435,6 +437,63 @@ class RegisterView(APIView):
                 'user': tokens['user'],
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GoogleLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        token = request.data.get('id_token') or request.data.get('credential')
+        user_type = request.data.get('user_type', 'jobseeker')
+        if user_type not in ['jobseeker', 'recruiter']:
+            user_type = 'jobseeker'
+
+        if not token:
+            return Response({'error': 'Google ID token is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            id_info = id_token.verify_oauth2_token(
+                token,
+                google_requests.Request(),
+                settings.GOOGLE_OAUTH_CLIENT_ID,
+            )
+        except ValueError:
+            return Response({'error': 'Invalid Google token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        email = id_info.get('email')
+        email_verified = id_info.get('email_verified', False)
+        if not email or not email_verified:
+            return Response({'error': 'Google account email verification failed'}, status=status.HTTP_400_BAD_REQUEST)
+
+        normalized_email = email.strip().lower()
+        user, created = User.objects.get_or_create(
+            email=normalized_email,
+            defaults={
+                'username': normalized_email,
+                'first_name': id_info.get('name', ''),
+                'last_name': user_type,
+            },
+        )
+
+        if not created:
+            existing_role = get_user_role(user)
+            if existing_role != user_type:
+                return Response(
+                    {'error': f'Account exists as {existing_role}. Please sign in with the correct role.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not user.first_name and id_info.get('name'):
+                user.first_name = id_info.get('name')
+                user.save(update_fields=['first_name'])
+
+        tokens = get_tokens_for_user(user, get_user_role(user))
+        return Response({
+            'message': 'Login successful',
+            'access': tokens['access'],
+            'refresh': tokens['refresh'],
+            'user_type': tokens['user_type'],
+            'user': tokens['user'],
+        }, status=status.HTTP_200_OK)
 
 
 class LoginView(APIView):

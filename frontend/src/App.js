@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, createJob, updateJob, createMessage, deleteJob, fetchBookmarks } from './services/api';
 import Login from './Login';
+import LampLogin from './components/LampLogin';
 import MyApplicationsModule from './MyApplicationsModule';
 import BookmarkButton from './BookmarkButton';
 import { InterviewScheduler, InterviewSummary } from './InterviewPanel';
@@ -614,7 +615,7 @@ function App() {
   return (
     <>
       {!isAuthenticated ? (
-        <Login onLoginSuccess={handleLoginSuccess} />
+        <LampLogin onLoginSuccess={handleLoginSuccess} />
       ) : (
         <div className={`App ${theme}`}>
       {/* Navigation */}
