@@ -1,10 +1,15 @@
 import React from 'react';
 
 const statusMeta = {
-  Pending: { label: 'Pending Review', tone: 'pending' },
-  Viewed: { label: 'Viewed', tone: 'viewed' },
-  Approved: { label: 'Approved', tone: 'approved' },
-  Rejected: { label: 'Rejected', tone: 'rejected' },
+  APPLIED: { label: 'Pending Review', tone: 'pending' },
+  RECRUITER_VIEWED: { label: 'Reviewed', tone: 'viewed' },
+  SHORTLISTED: { label: 'Shortlisted', tone: 'approved' },
+  INTERVIEW_SCHEDULED: { label: 'Interview Scheduled', tone: 'approved' },
+  INTERVIEW_COMPLETED: { label: 'Interview Completed', tone: 'approved' },
+  SELECTED: { label: 'Selected', tone: 'approved' },
+  OFFER_SENT: { label: 'Offer Sent', tone: 'approved' },
+  JOINED: { label: 'Joined', tone: 'approved' },
+  REJECTED: { label: 'Rejected', tone: 'rejected' },
 };
 
 function MyApplicationsModule({
@@ -76,7 +81,7 @@ function MyApplicationsModule({
             ) : (
               <div className="applications-grid">
                 {filteredApplications.map((application) => {
-                  const meta = statusMeta[application.status] || statusMeta.Pending;
+                  const meta = statusMeta[application.status] || statusMeta.APPLIED;
                   return (
                     <article key={application.id} className="application-card">
                       <div className="application-card-accent" />
@@ -121,7 +126,7 @@ function MyApplicationsModule({
                         >
                           View details
                         </button>
-                        <span className="application-card-tag subtle">{application.status === 'Viewed' ? 'Reviewed' : 'In progress'}</span>
+                        <span className="application-card-tag subtle">{application.status === 'RECRUITER_VIEWED' ? 'Reviewed' : 'In progress'}</span>
                       </div>
 
                       <p className="application-note">

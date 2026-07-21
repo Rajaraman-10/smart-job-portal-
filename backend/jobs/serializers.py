@@ -1,12 +1,25 @@
 from rest_framework import serializers
-from .models import Job, Application, Message, Company, RecruiterProfile, Bookmark, Interview
+from .models import Conversation, Job, Application, Message, Company, RecruiterProfile, UserProfile, Bookmark, Interview, Notification
 from django.contrib.auth.models import User
 from django.db.models import Q
 
 class InterviewSerializer(serializers.ModelSerializer):
     class Meta:
         model = Interview
-        fields = ['id', 'application', 'scheduled_at', 'mode', 'location_or_link', 'notes', 'created_at']
+        fields = [
+            'id',
+            'application',
+            'recruiter',
+            'interview_date',
+            'interview_time',
+            'meeting_link',
+            'interview_mode',
+            'interviewer_name',
+            'notes',
+            'status',
+            'created_at',
+        ]
+        read_only_fields = ['recruiter', 'created_at']
 
 
 class BookmarkSerializer(serializers.ModelSerializer):
@@ -18,6 +31,32 @@ class BookmarkSerializer(serializers.ModelSerializer):
         model = Bookmark
         fields = ['id', 'user', 'job', 'job_title', 'job_company', 'job_location', 'created_at']
         read_only_fields = ['user']
+
+    def validate(self, attrs):
+        user = self.context['request'].user
+        job = attrs.get('job')
+        if Bookmark.objects.filter(user=user, job=job).exists():
+            raise serializers.ValidationError('Job is already saved')
+        return attrs
+
+
+class CompanySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Company
+        fields = [
+            'id',
+            'name',
+            'logo',
+            'cover_image',
+            'website',
+            'industry',
+            'size',
+            'description',
+            'location',
+            'employees',
+            'rating',
+            'created_at',
+        ]
 
 
 class JobSerializer(serializers.ModelSerializer):
@@ -35,6 +74,7 @@ class JobSerializer(serializers.ModelSerializer):
             'description',
             'category',
             'required_skills',
+            'status',
             'company_meta',
             'posted_at',
         ]
@@ -92,14 +132,72 @@ class JobSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.SerializerMethodField()
+    conversation = serializers.PrimaryKeyRelatedField(queryset=Conversation.objects.all(), required=False, allow_null=True)
+    application = serializers.PrimaryKeyRelatedField(queryset=Application.objects.all(), required=False, write_only=True)
 
     class Meta:
         model = Message
-        fields = ['id', 'application', 'sender', 'sender_name', 'content', 'is_read', 'created_at']
-        read_only_fields = ['sender_name', 'created_at', 'sender', 'is_read']
+        fields = ['id', 'conversation', 'application', 'sender', 'sender_name', 'sender_type', 'content', 'is_read', 'created_at']
+        read_only_fields = ['sender_name', 'created_at', 'sender', 'is_read', 'sender_type']
+
+    def validate(self, attrs):
+        conversation = attrs.get('conversation')
+        application = attrs.get('application')
+
+        if conversation and application:
+            raise serializers.ValidationError({'application': 'Provide either conversation or application, not both.'})
+        if not conversation and not application:
+            raise serializers.ValidationError({'conversation': 'A conversation is required.'})
+
+        if application:
+            conversation_obj = Conversation.objects.filter(application=application).first()
+            if not conversation_obj:
+                conversation_obj = Conversation.objects.create(
+                    application=application,
+                    job_seeker=application.applicant,
+                    recruiter=application.job.recruiter,
+                )
+            attrs['conversation'] = conversation_obj
+
+        return attrs
+
+    def create(self, validated_data):
+        validated_data.pop('application', None)
+        return super().create(validated_data)
 
     def get_sender_name(self, obj):
         return obj.sender.first_name or obj.sender.username
+
+
+class ConversationSerializer(serializers.ModelSerializer):
+    applicant_name = serializers.CharField(source='job_seeker.first_name', read_only=True)
+    recruiter_name = serializers.CharField(source='recruiter.first_name', read_only=True)
+    job_title = serializers.CharField(source='application.job.title', read_only=True)
+    job_company = serializers.CharField(source='application.job.company', read_only=True)
+    unread_messages = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Conversation
+        fields = [
+            'id',
+            'application',
+            'job_seeker',
+            'recruiter',
+            'applicant_name',
+            'recruiter_name',
+            'job_title',
+            'job_company',
+            'created_at',
+            'updated_at',
+            'unread_messages',
+        ]
+        read_only_fields = ['job_seeker', 'recruiter', 'created_at', 'updated_at', 'unread_messages']
+
+    def get_unread_messages(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return 0
+        return obj.messages.filter(is_read=False).exclude(sender=request.user).count()
 
 
 class ApplicationSerializer(serializers.ModelSerializer):
@@ -108,10 +206,11 @@ class ApplicationSerializer(serializers.ModelSerializer):
     applicant_name = serializers.CharField(required=False, allow_blank=True)
     applicant_email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     resume_file = serializers.FileField(required=False, allow_null=True)
-    messages = MessageSerializer(many=True, read_only=True)
+    messages = MessageSerializer(source='conversation.messages', many=True, read_only=True)
     interviews = InterviewSerializer(many=True, read_only=True)
     message_count = serializers.SerializerMethodField()
     unread_message_count = serializers.SerializerMethodField()
+    conversation_id = serializers.IntegerField(source='conversation.id', read_only=True)
     has_conversation = serializers.SerializerMethodField()
 
     class Meta:
@@ -136,20 +235,25 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'message_count',
             'unread_message_count',
             'has_conversation',
+            'conversation_id',
         ]
         read_only_fields = ['job_title', 'job_company', 'applicant', 'message_count', 'unread_message_count', 'has_conversation']
 
     def get_message_count(self, obj):
-        return obj.messages.count()
+        conversation = getattr(obj, 'conversation', None)
+        if not conversation:
+            return 0
+        return conversation.messages.count()
 
     def get_unread_message_count(self, obj):
         request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
+        conversation = getattr(obj, 'conversation', None)
+        if not conversation or not request or not request.user.is_authenticated:
             return 0
-        return obj.messages.filter(is_read=False).exclude(sender=request.user).count()
+        return conversation.messages.filter(is_read=False).exclude(sender=request.user).count()
 
     def get_has_conversation(self, obj):
-        return obj.messages.exists()
+        return getattr(obj, 'conversation', None) is not None
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -225,13 +329,64 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = [
+            'id',
+            'mobile_number',
+            'profile_photo',
+            'headline',
+            'dob',
+            'gender',
+            'city',
+            'state',
+            'country',
+            'career_level',
+            'total_experience',
+            'current_company',
+            'current_job_title',
+            'current_salary',
+            'expected_salary',
+            'notice_period',
+            'preferred_job_type',
+            'preferred_work_mode',
+            'education',
+            'skills',
+            'resume_headline',
+            'resume_last_updated',
+            'projects',
+            'work_experience',
+            'certifications',
+            'languages',
+            'social_links',
+            'preferences',
+            'privacy_settings',
+            'resume_file',
+            'email_notifications',
+            'profile_completed',
+        ]
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'user', 'title', 'message', 'type', 'link', 'is_read', 'created_at']
+        read_only_fields = ['user', 'created_at']
+
+
 class UserSerializer(serializers.ModelSerializer):
     company_name = serializers.SerializerMethodField()
+    role = serializers.SerializerMethodField()
+    profile = UserProfileSerializer(read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'company_name']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'company_name', 'profile']
 
     def get_company_name(self, obj):
         profile = getattr(obj, 'recruiter_profile', None)
         return profile.company.name if profile and profile.company else None
+
+    def get_role(self, obj):
+        return obj.last_name if obj.last_name in ['jobseeker', 'recruiter', 'admin'] else 'jobseeker'

@@ -19,11 +19,13 @@ export function InterviewScheduler({ applicationId, existingInterviews = [], onS
     setIsSubmitting(true);
     setError('');
     try {
+      const dateTime = new Date(scheduledAt);
       const interview = await scheduleInterview({
         application: applicationId,
-        scheduled_at: scheduledAt,
-        mode,
-        location_or_link: locationOrLink,
+        interview_date: dateTime.toISOString().slice(0, 10),
+        interview_time: dateTime.toTimeString().slice(0, 5),
+        interview_mode: mode,
+        meeting_link: locationOrLink,
         notes,
       });
       onScheduled?.(interview);
@@ -87,13 +89,16 @@ export function InterviewSummary({ interviews = [] }) {
   return (
     <div className="interview-summary">
       <h4>Upcoming interviews</h4>
-      {interviews.map((entry) => (
-        <p key={entry.id}>
-          {new Date(entry.scheduled_at).toLocaleString()} • {entry.mode}
-          {entry.location_or_link ? ` • ${entry.location_or_link}` : ''}
-          {entry.notes ? <span className="interview-summary-notes"> • {entry.notes}</span> : null}
-        </p>
-      ))}
+      {interviews.map((entry) => {
+        const date = entry.interview_date ? new Date(`${entry.interview_date}T${entry.interview_time || '00:00'}`) : null;
+        return (
+          <p key={entry.id}>
+            {date ? date.toLocaleString() : 'TBA'} • {entry.interview_mode || entry.mode}
+            {entry.meeting_link ? ` • ${entry.meeting_link}` : ''}
+            {entry.notes ? <span className="interview-summary-notes"> • {entry.notes}</span> : null}
+          </p>
+        );
+      })}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { login as apiLogin, requestOtp as apiRequestOtp, verifyOtp as apiVerifyO
 export default function LampLogin({ onLoginSuccess }) {
   const [isOn, setIsOn] = useState(false);
   const [step, setStep] = useState('role'); // 'role' | 'auth'
-  const [selectedRole, setSelectedRole] = useState(null); // 'jobseeker' | 'recruiter'
+  const [selectedRole, setSelectedRole] = useState(null); // 'jobseeker' | 'recruiter' | 'admin'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,7 +27,8 @@ export default function LampLogin({ onLoginSuccess }) {
       const res = await apiLogin(email, password);
       if (res.access) {
         if (selectedRole && res.user_type && res.user_type !== selectedRole) {
-          setError(`❌ This account is registered as a ${res.user_type === 'recruiter' ? 'Recruiter' : 'Job Seeker'}. Please login with the correct role.`);
+          const roleText = res.user_type === 'recruiter' ? 'Recruiter' : res.user_type === 'admin' ? 'Admin' : 'Job Seeker';
+          setError(`❌ This account is registered as a ${roleText}. Please login with the correct role.`);
           return;
         }
         localStorage.setItem('accessToken', res.access);
@@ -79,7 +80,8 @@ export default function LampLogin({ onLoginSuccess }) {
       const res = await apiVerifyOtp(email, otp);
       if (res.access) {
         if (selectedRole && res.user_type && res.user_type !== selectedRole) {
-          setError(`❌ This account is registered as a ${res.user_type === 'recruiter' ? 'Recruiter' : 'Job Seeker'}. Please login with the correct role.`);
+          const roleText = res.user_type === 'recruiter' ? 'Recruiter' : res.user_type === 'admin' ? 'Admin' : 'Job Seeker';
+          setError(`❌ This account is registered as a ${roleText}. Please login with the correct role.`);
           return;
         }
         localStorage.setItem('accessToken', res.access);
@@ -174,6 +176,20 @@ export default function LampLogin({ onLoginSuccess }) {
             <h3>Recruiter</h3>
             <div>Post jobs and manage applicants</div>
           </button>
+
+          <button
+            onClick={() => {
+              setSelectedRole('admin');
+              setStep('auth');
+              setError('');
+              setMessage('');
+            }}
+            style={{ flex: 1, padding: 24, borderRadius: 12, background: 'linear-gradient(135deg,#f97316,#f59e0b)', color: '#fff', border: 'none', cursor: 'pointer' }}
+          >
+            <div style={{ fontSize: 28 }}>🛡️</div>
+            <h3>Admin</h3>
+            <div>Review platform activity and manage workflows</div>
+          </button>
         </div>
       </div>
     );
@@ -212,7 +228,7 @@ export default function LampLogin({ onLoginSuccess }) {
             </div>
 
             {error && <div className="error-message" style={{ color: '#ffb4b4', marginBottom: 8 }}>{error}</div>}
-            <div style={{ marginBottom: 6, color: 'var(--ll-muted)' }}>{selectedRole ? `Signing in as ${selectedRole === 'recruiter' ? 'Recruiter' : 'Job Seeker'}` : 'Select a role'}</div>
+            <div style={{ marginBottom: 6, color: 'var(--ll-muted)' }}>{selectedRole ? `Signing in as ${selectedRole === 'recruiter' ? 'Recruiter' : selectedRole === 'admin' ? 'Admin' : 'Job Seeker'}` : 'Select a role'}</div>
             <div className="ll-field">
               <input type="email" placeholder="Email address" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>

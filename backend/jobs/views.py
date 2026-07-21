@@ -1,6 +1,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.views import APIView
@@ -14,21 +15,29 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db.models import Q
-from .models import Job, Application, Message, RecruiterProfile, Bookmark, Interview, LoginOTP
+from .models import Conversation, Job, Application, Message, Company, RecruiterProfile, UserProfile, Bookmark, Interview, Notification, LoginOTP
 from .serializers import (
+    ConversationSerializer,
     JobSerializer,
     ApplicationSerializer,
     MessageSerializer,
     UserSerializer,
     RegisterSerializer,
     LoginSerializer,
+    UserProfileSerializer,
     BookmarkSerializer,
     InterviewSerializer,
+    NotificationSerializer,
+    CompanySerializer,
 )
 
 
 def get_user_role(user):
-    return user.last_name if user.last_name in ['jobseeker', 'recruiter'] else 'jobseeker'
+    return user.last_name if user.last_name in ['jobseeker', 'recruiter', 'admin'] else 'jobseeker'
+
+
+def is_admin(user):
+    return get_user_role(user) == 'admin'
 
 
 def get_recruiter_company_name(user):
@@ -37,6 +46,7 @@ def get_recruiter_company_name(user):
 
 
 def get_tokens_for_user(user, user_type='jobseeker'):
+    UserProfile.objects.get_or_create(user=user)
     refresh = RefreshToken.for_user(user)
     return {
         'refresh': str(refresh),
@@ -51,13 +61,40 @@ class IsRecruiterOrReadOnly(IsAuthenticatedOrReadOnly):
     Custom permission to allow only the recruiter who posted a job to edit/delete it.
     """
     def has_object_permission(self, request, view, obj):
-        # Read permissions are allowed to any request
         if request.method in ['GET', 'HEAD', 'OPTIONS']:
             return True
-        
-        # Write permissions are only allowed to the recruiter who posted the job
         if isinstance(obj, Job):
             return obj.recruiter == request.user
+        return False
+
+
+class IsAdminOrRecruiterJobAccess(IsAuthenticatedOrReadOnly):
+    def has_object_permission(self, request, view, obj):
+        if request.method in ['GET', 'HEAD', 'OPTIONS']:
+            return True
+        user = request.user
+        if is_admin(user):
+            return True
+        if isinstance(obj, Job):
+            return obj.recruiter == user
+        return False
+
+
+class IsAdminOrRecruiterApplicationAccess(IsAuthenticated):
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        user_type = get_user_role(user)
+        if user_type == 'admin':
+            return True
+        if user_type == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            if obj.job.recruiter == user:
+                return True
+            if company_name and obj.job.company.lower() == company_name.lower():
+                return True
+            return False
+        if user_type == 'jobseeker':
+            return obj.applicant == user
         return False
 
 
@@ -65,16 +102,23 @@ class JobViewSet(viewsets.ModelViewSet):
     queryset = Job.objects.all().order_by('-posted_at')
     serializer_class = JobSerializer
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsRecruiterOrReadOnly]
+    permission_classes = [IsAdminOrRecruiterJobAccess]
 
     def get_queryset(self):
         category = self.request.query_params.get('category')
         queryset = Job.objects.all().order_by('-posted_at')
+        user = self.request.user
+
+        if not user.is_authenticated or get_user_role(user) != 'recruiter':
+            queryset = queryset.filter(status=Job.STATUS_ACTIVE)
+
         if category and category != 'All Jobs':
             queryset = queryset.filter(category__iexact=category)
 
-        user = self.request.user
         if not user.is_authenticated:
+            return queryset
+
+        if get_user_role(user) == 'admin':
             return queryset
 
         if get_user_role(user) == 'recruiter':
@@ -95,8 +139,9 @@ class JobViewSet(viewsets.ModelViewSet):
 
 class ApplicationViewSet(viewsets.ModelViewSet):
     serializer_class = ApplicationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminOrRecruiterApplicationAccess]
     authentication_classes = [JWTAuthentication]
+    parser_classes = [FormParser, MultiPartParser, JSONParser]
 
     def get_queryset(self):
         """
@@ -107,6 +152,9 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         user = self.request.user
         user_type = get_user_role(user)
         
+        if user_type == 'admin':
+            return Application.objects.all().order_by('-applied_at')
+
         if user_type == 'recruiter':
             company_name = get_recruiter_company_name(user)
             if company_name:
@@ -161,14 +209,14 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         self.perform_update(serializer)
 
         new_status = serializer.validated_data.get('status', instance.status)
-        if old_status != new_status and new_status in ['Approved', 'Rejected']:
+        if old_status != new_status:
             recipient = instance.applicant_email or instance.applicant.email
             if recipient:
-                subject = f"Your application status: {new_status}"
+                subject = f"Your application status: {new_status.replace('_', ' ').title()}"
                 message = (
                     f"Hi {instance.applicant_name or instance.applicant.first_name or instance.applicant.username},\n\n"
-                    f"Your application for '{instance.job.title}' has been {new_status}.\n\n"
-                    f"Regards,\nSmart Job Portal Team"
+                    f"Your application for '{instance.job.title}' has moved to '{new_status.replace('_', ' ').title()}'.\n\n"
+                    f"Regards,\nVipseekers Team"
                 )
                 send_mail(
                     subject,
@@ -177,6 +225,12 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                     [recipient],
                     fail_silently=True,
                 )
+
+            Notification.objects.create(
+                user=instance.applicant,
+                title=f"Application status updated",
+                message=f"Your application for {instance.job.title} is now {new_status.replace('_', ' ').title()}.",
+            )
 
         return Response(serializer.data)
 
@@ -189,17 +243,21 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         if user_type == 'recruiter':
             has_company_access = company_name and instance.job.company.lower() == company_name.lower()
 
-        if user_type == 'recruiter' and (instance.job.recruiter == user or has_company_access) and instance.status == 'Pending':
-            instance.status = 'Viewed'
+        if user_type == 'recruiter' and (instance.job.recruiter == user or has_company_access) and instance.status == 'APPLIED':
+            instance.status = 'RECRUITER_VIEWED'
             instance.viewed_at = timezone.now()
             instance.save(update_fields=['status', 'viewed_at'])
 
-        if instance.messages.filter(is_read=False).exclude(sender=request.user).exists():
-            instance.messages.filter(is_read=False).exclude(sender=request.user).update(is_read=True)
+        conversation = getattr(instance, 'conversation', None)
+        if conversation and conversation.messages.filter(is_read=False).exclude(sender=request.user).exists():
+            conversation.messages.filter(is_read=False).exclude(sender=request.user).update(is_read=True)
 
         serializer = self.get_serializer(instance)
         response_data = serializer.data
-        response_data['unread_message_count'] = instance.messages.filter(is_read=False).exclude(sender=request.user).count()
+        if conversation:
+            response_data['unread_message_count'] = conversation.messages.filter(is_read=False).exclude(sender=request.user).count()
+        else:
+            response_data['unread_message_count'] = 0
         return Response(response_data)
 
     @action(detail=False, methods=['get'], url_path='grouped-by-job')
@@ -223,6 +281,73 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         return Response(grouped)
 
 
+class AnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        user = request.user
+        user_type = get_user_role(user)
+        if user_type not in ['recruiter', 'admin']:
+            return Response({'detail': 'Analytics available to recruiters and admins only.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if user_type == 'admin':
+            jobs = Job.objects.all()
+            applications = Application.objects.all()
+            interviews = Interview.objects.all()
+        else:
+            company_name = get_recruiter_company_name(user)
+            if company_name:
+                jobs = Job.objects.filter(company__iexact=company_name)
+                applications = Application.objects.filter(job__company__iexact=company_name)
+                interviews = Interview.objects.filter(application__job__company__iexact=company_name)
+            else:
+                jobs = Job.objects.filter(recruiter=user)
+                applications = Application.objects.filter(job__recruiter=user)
+                interviews = Interview.objects.filter(recruiter=user)
+
+        applications_per_day = []
+        date_counts = {}
+        for application in applications.order_by('-applied_at'):
+            if application.applied_at:
+                date_str = application.applied_at.strftime('%Y-%m-%d')
+                date_counts[date_str] = date_counts.get(date_str, 0) + 1
+        applications_per_day = [{'day': day, 'applications': count} for day, count in sorted(date_counts.items())]
+
+        job_counts = {}
+        for application in applications:
+            job_title = application.job.title if application.job else 'Unknown'
+            job_counts[job_title] = job_counts.get(job_title, 0) + 1
+        top_jobs = [{'title': title, 'company': Application.objects.filter(job__title=title).first().job.company if Application.objects.filter(job__title=title).exists() else '', 'applications': count} for title, count in sorted(job_counts.items(), key=lambda item: item[1], reverse=True)[:5]]
+
+        skill_counts = {}
+        for application in applications:
+            skills = (application.skills or '').split(',')
+            for skill in skills:
+                normalized = skill.strip().title()
+                if normalized:
+                    skill_counts[normalized] = skill_counts.get(normalized, 0) + 1
+        top_skills = [{'name': name, 'count': count} for name, count in sorted(skill_counts.items(), key=lambda item: item[1], reverse=True)[:5]]
+
+        total_applications = applications.count()
+        job_share = []
+        job_share_map = {}
+        for application in applications:
+            company = application.job.company if application.job else 'Unknown'
+            job_share_map[company] = job_share_map.get(company, 0) + 1
+        job_share = [{'name': company, 'value': count} for company, count in sorted(job_share_map.items(), key=lambda item: item[1], reverse=True)[:5]]
+
+        return Response({
+            'jobs_posted': jobs.count(),
+            'applications': total_applications,
+            'interviews': interviews.count(),
+            'applications_per_day': applications_per_day,
+            'top_jobs': top_jobs,
+            'top_skills': top_skills,
+            'job_share': job_share,
+        })
+
+
 class BookmarkViewSet(viewsets.ModelViewSet):
     serializer_class = BookmarkSerializer
     permission_classes = [IsAuthenticated]
@@ -241,23 +366,220 @@ class InterviewViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
+    def get_queryset(self):
+        user = self.request.user
+        if get_user_role(user) == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            if company_name:
+                return Interview.objects.filter(application__job__company__iexact=company_name).order_by('-created_at')
+            return Interview.objects.filter(recruiter=user).order_by('-created_at')
+        return Interview.objects.filter(application__applicant=user).order_by('-created_at')
+
     def perform_create(self, serializer):
-        interview = serializer.save()
+        interview = serializer.save(recruiter=self.request.user)
         application = interview.application
+
+        if application.status in {'APPLIED', 'RECRUITER_VIEWED'}:
+            application.status = 'SHORTLISTED'
+            application.save(update_fields=['status'])
+
+        application.status = 'INTERVIEW_SCHEDULED'
+        application.save(update_fields=['status'])
+
+        conversation, _ = Conversation.objects.get_or_create(
+            application=application,
+            defaults={
+                'job_seeker': application.applicant,
+                'recruiter': application.job.recruiter,
+            },
+        )
+
+        Notification.objects.create(
+            user=application.applicant,
+            title='Interview Scheduled',
+            message=f'An interview has been scheduled for {application.job.title} on {interview.interview_date} at {interview.interview_time}.',
+        )
+
         send_mail(
             subject=f"Interview scheduled — {application.job.title} at {application.job.company}",
             message=(
                 f"Hi {application.applicant_name},\n\n"
                 f"An interview has been scheduled for your application to {application.job.title}.\n"
-                f"When: {interview.scheduled_at}\n"
-                f"Mode: {interview.mode}\n"
-                f"Details: {interview.location_or_link or interview.notes}\n\n"
+                f"Date: {interview.interview_date}\n"
+                f"Time: {interview.interview_time}\n"
+                f"Mode: {interview.interview_mode}\n"
+                f"Link / location: {interview.meeting_link or interview.notes}\n\n"
                 f"Good luck!"
             ),
-            from_email=None,
-            recipient_list=[application.applicant_email],
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[application.applicant_email or application.applicant.email],
             fail_silently=True,
         )
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        old_status = instance.status
+        serializer = self.get_serializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        new_status = serializer.validated_data.get('status', instance.status)
+        if old_status != new_status:
+            Notification.objects.create(
+                user=instance.application.applicant,
+                title='Interview Update',
+                message=f'Your interview for {instance.application.job.title} has been updated to {new_status}.',
+            )
+        return Response(self.get_serializer(instance).data)
+
+
+class NotificationViewSet(viewsets.ModelViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get_queryset(self):
+        return Notification.objects.filter(user=self.request.user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    @action(detail=True, methods=['post'], url_path='mark-read')
+    def mark_read(self, request, pk=None):
+        notification = self.get_object()
+        if notification.user != request.user:
+            raise PermissionDenied('You do not have permission to modify this notification.')
+        notification.is_read = True
+        notification.save(update_fields=['is_read'])
+        return Response({'detail': 'Notification marked as read'})
+
+
+class UserViewSet(viewsets.ReadOnlyModelViewSet):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get_queryset(self):
+        user = self.request.user
+        if is_admin(user):
+            return User.objects.all().order_by('id')
+        return User.objects.filter(id=user.id)
+
+
+class CompanyViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Company.objects.all().order_by('-created_at')
+    serializer_class = CompanySerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get_queryset(self):
+        user = self.request.user
+        if is_admin(user):
+            return Company.objects.all().order_by('-created_at')
+        return Company.objects.none()
+
+
+class AdminDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        if not is_admin(request.user):
+            return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        totals = {
+            'users': User.objects.count(),
+            'jobseekers': User.objects.filter(last_name='jobseeker').count(),
+            'recruiters': User.objects.filter(last_name='recruiter').count(),
+            'admins': User.objects.filter(last_name='admin').count(),
+            'jobs': Job.objects.count(),
+            'active_jobs': Job.objects.filter(status=Job.STATUS_ACTIVE).count(),
+            'applications': Application.objects.count(),
+            'companies': Company.objects.count(),
+        }
+
+        status_counts = {
+            status: Application.objects.filter(status=status).count()
+            for status, _ in Application.APPLICATION_STATUS_CHOICES
+        }
+
+        recent_applications = ApplicationSerializer(
+            Application.objects.order_by('-applied_at')[:5],
+            many=True,
+            context={'request': request},
+        ).data
+
+        recent_jobs = JobSerializer(Job.objects.order_by('-posted_at')[:5], many=True, context={'request': request}).data
+        recent_users = UserSerializer(User.objects.order_by('-id')[:5], many=True, context={'request': request}).data
+
+        return Response({
+            'totals': totals,
+            'applications_by_status': status_counts,
+            'recent_applications': recent_applications,
+            'recent_jobs': recent_jobs,
+            'recent_users': recent_users,
+        })
+
+
+class ConversationViewSet(viewsets.ModelViewSet):
+    queryset = Conversation.objects.all().order_by('-updated_at')
+    serializer_class = ConversationSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = Conversation.objects.all().order_by('-updated_at')
+        if get_user_role(user) == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            if company_name:
+                queryset = queryset.filter(application__job__company__iexact=company_name)
+            else:
+                queryset = queryset.filter(recruiter=user)
+        else:
+            queryset = queryset.filter(job_seeker=user)
+
+        application_id = self.request.query_params.get('application')
+        if application_id:
+            queryset = queryset.filter(application_id=application_id)
+
+        return queryset
+
+    def perform_create(self, serializer):
+        application = serializer.validated_data['application']
+        user = self.request.user
+        if application.applicant != user and get_user_role(user) != 'recruiter':
+            raise PermissionDenied('You can only create conversations for your own applications.')
+
+        recruiter = application.job.recruiter
+        if get_user_role(user) == 'recruiter' and recruiter != user and get_recruiter_company_name(user) and application.job.company.lower() != get_recruiter_company_name(user).lower():
+            raise PermissionDenied('You can only create conversations for your own company applications.')
+
+        serializer.save(
+            job_seeker=application.applicant,
+            recruiter=recruiter,
+        )
+
+    @action(detail=False, methods=['get'], url_path='unread-count')
+    def unread_count(self, request):
+        user = request.user
+        if get_user_role(user) == 'recruiter':
+            company_name = get_recruiter_company_name(user)
+            if company_name:
+                unread = Message.objects.filter(
+                    conversation__application__job__company__iexact=company_name,
+                    is_read=False,
+                ).exclude(sender=user).count()
+            else:
+                unread = Message.objects.filter(
+                    conversation__recruiter=user,
+                    is_read=False,
+                ).exclude(sender=user).count()
+        else:
+            unread = Message.objects.filter(
+                conversation__job_seeker=user,
+                is_read=False,
+            ).exclude(sender=user).count()
+        return Response({'unread_count': unread})
 
 
 class MessageViewSet(viewsets.ModelViewSet):
@@ -271,79 +593,74 @@ class MessageViewSet(viewsets.ModelViewSet):
         if get_user_role(user) == 'recruiter':
             company_name = get_recruiter_company_name(user)
             if company_name:
-                queryset = Message.objects.filter(application__job__company__iexact=company_name)
+                queryset = Message.objects.filter(conversation__application__job__company__iexact=company_name)
             else:
-                queryset = Message.objects.filter(application__job__recruiter=user)
+                queryset = Message.objects.filter(conversation__application__job__recruiter=user)
         else:
-            queryset = Message.objects.filter(application__applicant=user)
+            queryset = Message.objects.filter(conversation__job_seeker=user)
 
-        application_id = self.request.query_params.get('application')
-        if application_id:
-            queryset = queryset.filter(application_id=application_id)
+        conversation_id = self.request.query_params.get('conversation')
+        if conversation_id:
+            queryset = queryset.filter(conversation_id=conversation_id)
 
         return queryset
 
     def perform_create(self, serializer):
-        application = serializer.validated_data['application']
+        conversation = serializer.validated_data['conversation']
         user = self.request.user
         is_recruiter = get_user_role(user) == 'recruiter'
+        company_name = get_recruiter_company_name(user) if is_recruiter else None
 
         if is_recruiter:
-            company_name = get_recruiter_company_name(user)
-            if company_name and application.job.company.lower() != company_name.lower():
-                raise PermissionDenied('You cannot message on this application.')
-            if application.job.recruiter != user and not (company_name and application.job.company.lower() == company_name.lower()):
-                raise PermissionDenied('You cannot message on this application.')
-        if not is_recruiter and application.applicant != user:
-            raise PermissionDenied('You cannot message on this application.')
-        if application.status not in ['Viewed', 'Approved', 'Rejected']:
-            raise PermissionDenied('Messages may only be sent after the recruiter has viewed the application.')
-
-        serializer.save(sender=user)
-
-    @action(detail=False, methods=['get'], url_path='unread-count')
-    def unread_count(self, request):
-        user = request.user
-        if get_user_role(user) == 'recruiter':
-            company_name = get_recruiter_company_name(user)
-            if company_name:
-                unread = Message.objects.filter(
-                    application__job__company__iexact=company_name,
-                    is_read=False,
-                ).exclude(sender=user).count()
-            else:
-                unread = Message.objects.filter(
-                    application__job__recruiter=user,
-                    is_read=False,
-                ).exclude(sender=user).count()
+            if company_name and conversation.application.job.company.lower() != company_name.lower():
+                raise PermissionDenied('You cannot message on this conversation.')
+            if conversation.recruiter != user and conversation.application.job.recruiter != user:
+                raise PermissionDenied('You cannot message on this conversation.')
         else:
-            unread = Message.objects.filter(
-                application__applicant=user,
-                is_read=False,
-            ).exclude(sender=user).count()
-        return Response({'unread_count': unread})
+            if conversation.job_seeker != user:
+                raise PermissionDenied('You cannot message on this conversation.')
+
+        if not is_recruiter:
+            allowed_statuses = ['RECRUITER_VIEWED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEW_COMPLETED', 'OFFER_SENT', 'SELECTED']
+            if conversation.application.status not in allowed_statuses:
+                raise PermissionDenied('Messages may only be sent after the recruiter has reviewed or moved your application forward.')
+
+        message = serializer.save(sender=user, sender_type=(Message.SENDER_RECRUITER if is_recruiter else Message.SENDER_JOBSEEKER))
+        conversation.updated_at = timezone.now()
+        conversation.save(update_fields=['updated_at'])
+
+        recipient = conversation.job_seeker if is_recruiter else conversation.recruiter
+        Notification.objects.create(
+            user=recipient,
+            title='New message',
+            message=f'New message on your application for {conversation.application.job.title}.',
+            type='message',
+            link=f'/messages/{conversation.id}',
+        )
+
+        return message
 
     @action(detail=False, methods=['post'], url_path='mark-all-read')
     def mark_all_read(self, request):
-        application_id = request.data.get('application')
-        if not application_id:
-            return Response({'detail': 'Application ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        conversation_id = request.data.get('conversation')
+        if not conversation_id:
+            return Response({'detail': 'Conversation ID is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         user = request.user
+        conversation = Conversation.objects.filter(id=conversation_id).first()
+        if not conversation:
+            return Response({'detail': 'Conversation not found.'}, status=status.HTTP_404_NOT_FOUND)
+
         if get_user_role(user) == 'recruiter':
-            company_name = get_recruiter_company_name(user)
-            if company_name:
-                allowed = Application.objects.filter(id=application_id, job__company__iexact=company_name).exists()
-            else:
-                allowed = Application.objects.filter(id=application_id, job__recruiter=user).exists()
+            allowed = conversation.recruiter == user or (get_recruiter_company_name(user) and conversation.application.job.company.lower() == get_recruiter_company_name(user).lower())
         else:
-            allowed = Application.objects.filter(id=application_id, applicant=user).exists()
+            allowed = conversation.job_seeker == user
 
         if not allowed:
-            return Response({'detail': 'Not allowed to mark messages for this application.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'detail': 'Not allowed to mark messages for this conversation.'}, status=status.HTTP_403_FORBIDDEN)
 
         updated_count = Message.objects.filter(
-            application_id=application_id,
+            conversation=conversation,
             is_read=False
         ).exclude(sender=user).update(is_read=True)
         return Response({'marked_count': updated_count})
@@ -353,10 +670,9 @@ class MessageViewSet(viewsets.ModelViewSet):
         message = self.get_object()
         user = request.user
         if get_user_role(user) == 'recruiter':
-            company_name = get_recruiter_company_name(user)
-            allowed = message.application.job.recruiter == user or (company_name and message.application.job.company.lower() == company_name.lower())
+            allowed = message.conversation.recruiter == user or message.conversation.application.job.recruiter == user or (get_recruiter_company_name(user) and message.conversation.application.job.company.lower() == get_recruiter_company_name(user).lower())
         else:
-            allowed = message.application.applicant == user
+            allowed = message.conversation.job_seeker == user
 
         if not allowed:
             return Response({'detail': 'Not allowed to mark this message.'}, status=status.HTTP_403_FORBIDDEN)
@@ -427,6 +743,7 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
+            UserProfile.objects.get_or_create(user=user)
             user_type = serializer.validated_data.get('user_type', 'jobseeker')
             tokens = get_tokens_for_user(user, user_type)
             return Response({
@@ -439,13 +756,38 @@ class RegisterView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class UserProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        serializer = UserProfileSerializer(profile)
+        return Response(serializer.data)
+
+    def put(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        serializer = UserProfileSerializer(profile, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        profile = serializer.save()
+        if not profile.profile_completed:
+            profile.profile_completed = bool(
+                profile.mobile_number and profile.headline and profile.city and profile.country
+            )
+            profile.save(update_fields=['profile_completed'])
+        return Response(UserProfileSerializer(profile).data)
+
+    def patch(self, request):
+        return self.put(request)
+
+
 class GoogleLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
         token = request.data.get('id_token') or request.data.get('credential')
         user_type = request.data.get('user_type', 'jobseeker')
-        if user_type not in ['jobseeker', 'recruiter']:
+        if user_type not in ['jobseeker', 'recruiter', 'admin']:
             user_type = 'jobseeker'
 
         if not token:
@@ -466,16 +808,8 @@ class GoogleLoginView(APIView):
             return Response({'error': 'Google account email verification failed'}, status=status.HTTP_400_BAD_REQUEST)
 
         normalized_email = email.strip().lower()
-        user, created = User.objects.get_or_create(
-            email=normalized_email,
-            defaults={
-                'username': normalized_email,
-                'first_name': id_info.get('name', ''),
-                'last_name': user_type,
-            },
-        )
-
-        if not created:
+        user = User.objects.filter(email=normalized_email).first()
+        if user:
             existing_role = get_user_role(user)
             if existing_role != user_type:
                 return Response(
@@ -485,6 +819,20 @@ class GoogleLoginView(APIView):
             if not user.first_name and id_info.get('name'):
                 user.first_name = id_info.get('name')
                 user.save(update_fields=['first_name'])
+        else:
+            if user_type == 'admin':
+                return Response(
+                    {'error': 'Admin accounts must be created by an existing administrator.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            user = User.objects.create(
+                username=normalized_email,
+                email=normalized_email,
+                first_name=id_info.get('name', ''),
+                last_name=user_type,
+            )
+
+        UserProfile.objects.get_or_create(user=user)
 
         tokens = get_tokens_for_user(user, get_user_role(user))
         return Response({

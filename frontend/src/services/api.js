@@ -130,6 +130,41 @@ export async function verifyOtp(email, otp) {
   return contentType.includes('application/json') ? response.json() : { message: await response.text() };
 }
 
+export async function fetchUserProfile() {
+  const response = await fetch(`${API_BASE_URL}/auth/profile/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load profile');
+  }
+  return response.json();
+}
+
+export async function updateUserProfile(profileData) {
+  const response = await fetch(`${API_BASE_URL}/auth/profile/`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(profileData),
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to update profile';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || errorData.error || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
 export async function loginWithGoogle(idToken, userType) {
   const response = await fetch(`${API_BASE_URL}/auth/google-login/`, {
     method: 'POST',
@@ -196,6 +231,45 @@ export async function fetchAnalytics() {
   });
   if (!response.ok) {
     throw new Error('Failed to load analytics');
+  }
+  return response.json();
+}
+
+export async function fetchAdminDashboard() {
+  const response = await fetch(`${API_BASE_URL}/admin/dashboard/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load admin dashboard');
+  }
+  return response.json();
+}
+
+export async function fetchUsers() {
+  const response = await fetch(`${API_BASE_URL}/users/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load users');
+  }
+  return response.json();
+}
+
+export async function fetchCompanies() {
+  const response = await fetch(`${API_BASE_URL}/companies/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load companies');
   }
   return response.json();
 }
@@ -287,26 +361,64 @@ export async function createApplication(application) {
 }
 
 export async function createMessage(applicationId, message) {
-  const response = await fetch(`${API_BASE_URL}/messages/`, {
-    method: 'POST',
+  // Ensure a conversation exists for this application. The backend Message API
+  // expects a `conversation` field, not `application`. Try to find an existing
+  // conversation first, otherwise create one, then post the message.
+  try {
+    const convResp = await fetch(`${API_BASE_URL}/conversations/?application=${applicationId}`, {
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    });
+    if (!convResp.ok) throw new Error('Failed to lookup conversation');
+    const convList = await convResp.json();
+    let conversationId = convList && convList.length ? convList[0].id : null;
+
+    if (!conversationId) {
+      const createConvResp = await fetch(`${API_BASE_URL}/conversations/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ application: applicationId }),
+      });
+      if (!createConvResp.ok) {
+        const err = await createConvResp.text();
+        throw new Error(err || 'Failed to create conversation');
+      }
+      const created = await createConvResp.json();
+      conversationId = created.id;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/messages/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ conversation: conversationId, content: message }),
+    });
+
+    if (!response.ok) {
+      let errorMsg = 'Failed to send message';
+      try {
+        const errorData = await response.json();
+        errorMsg = errorData.detail || errorData.error || JSON.stringify(errorData);
+      } catch (e) {
+        errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+      }
+      throw new Error(errorMsg);
+    }
+
+    return response.json();
+  } catch (err) {
+    throw new Error(err.message || 'Failed to send message');
+  }
+}
+
+export async function fetchInterviews() {
+  const response = await fetch(`${API_BASE_URL}/interviews/`, {
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
     },
-    body: JSON.stringify({ application: applicationId, content: message }),
   });
-
   if (!response.ok) {
-    let errorMsg = 'Failed to send message';
-    try {
-      const errorData = await response.json();
-      errorMsg = errorData.detail || errorData.error || JSON.stringify(errorData);
-    } catch (e) {
-      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
-    }
-    throw new Error(errorMsg);
+    throw new Error('Failed to load interviews');
   }
-
   return response.json();
 }
 
@@ -433,6 +545,40 @@ export async function scheduleInterview(payload) {
   });
   if (!response.ok) {
     let errorMsg = 'Failed to schedule interview';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
+export async function fetchNotifications() {
+  const response = await fetch(`${API_BASE_URL}/notifications/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load notifications');
+  }
+  return response.json();
+}
+
+export async function markNotificationRead(notificationId) {
+  const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}/mark-read/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to mark notification read';
     try {
       const errorData = await response.json();
       errorMsg = errorData.detail || JSON.stringify(errorData);

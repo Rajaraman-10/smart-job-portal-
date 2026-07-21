@@ -6,7 +6,7 @@ from django.core import mail
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Application, Job, Company, RecruiterProfile, LoginOTP
+from .models import Application, Job, Company, RecruiterProfile, LoginOTP, Conversation
 
 
 class AuthFlowTests(TestCase):
@@ -138,6 +138,66 @@ class AuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['status'], 'Viewed')
         self.assertIsNotNone(response.json()['viewed_at'])
+
+    def test_scheduling_interview_updates_application_and_creates_conversation(self):
+        applicant = User.objects.create_user(username='applicant3@example.com', email='applicant3@example.com', password='secret123')
+        recruiter = User.objects.create_user(username='recruiter3@example.com', email='recruiter3@example.com', password='secret123', last_name='recruiter')
+        job = Job.objects.create(recruiter=recruiter, title='Product Designer', company='Acme', location='Remote', description='Design apps')
+        application = Application.objects.create(
+            job=job,
+            applicant=applicant,
+            applicant_name='Applicant Three',
+            applicant_email='applicant3@example.com',
+            status='APPLIED',
+        )
+
+        client = APIClient()
+        refresh = RefreshToken.for_user(recruiter)
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = client.post(
+            '/api/interviews/',
+            {
+                'application': application.id,
+                'interview_date': '2026-08-01',
+                'interview_time': '10:00',
+                'interview_mode': 'Video',
+                'meeting_link': 'https://meet.example.com',
+                'notes': 'Please be prepared',
+            },
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        application.refresh_from_db()
+        self.assertEqual(application.status, 'INTERVIEW_SCHEDULED')
+        self.assertTrue(Conversation.objects.filter(application=application).exists())
+
+    def test_message_creation_accepts_application_payload(self):
+        applicant = User.objects.create_user(username='applicant4@example.com', email='applicant4@example.com', password='secret123')
+        recruiter = User.objects.create_user(username='recruiter4@example.com', email='recruiter4@example.com', password='secret123', last_name='recruiter')
+        job = Job.objects.create(recruiter=recruiter, title='Data Scientist', company='Acme', location='Remote', description='Analyze data')
+        application = Application.objects.create(
+            job=job,
+            applicant=applicant,
+            applicant_name='Applicant Four',
+            applicant_email='applicant4@example.com',
+            status='INTERVIEW_SCHEDULED',
+        )
+
+        client = APIClient()
+        refresh = RefreshToken.for_user(recruiter)
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = client.post(
+            '/api/messages/',
+            {'application': application.id, 'content': 'Thanks for the update'},
+            content_type='application/json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(Conversation.objects.filter(application=application).exists())
+        self.assertEqual(response.json()['content'], 'Thanks for the update')
 
     def test_request_otp_sends_email_and_creates_code(self):
         response = self.client.post(

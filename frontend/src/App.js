@@ -1,11 +1,29 @@
 import { useEffect, useState } from 'react';
-import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, createJob, updateJob, createMessage, deleteJob, fetchBookmarks } from './services/api';
-import Login from './Login';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, createJob, updateJob, createMessage, deleteJob, fetchBookmarks, fetchNotifications, fetchUserProfile, updateUserProfile, markNotificationRead, fetchConversations, fetchMessages, fetchInterviews, createConversation, fetchAnalytics, fetchAdminDashboard, fetchUsers, fetchCompanies } from './services/api';
 import LampLogin from './components/LampLogin';
 import MyApplicationsModule from './MyApplicationsModule';
 import BookmarkButton from './BookmarkButton';
 import { InterviewScheduler, InterviewSummary } from './InterviewPanel';
+import JobPortalDashboard from './JobPortalDashboard';
+import RecruiterLayout from './recruiter/pages/RecruiterLayout';
+import RecruiterDashboardPage from './recruiter/pages/RecruiterDashboardPage';
+import RecruiterPostJobPage from './recruiter/pages/RecruiterPostJobPage';
+import RecruiterManageJobsPage from './recruiter/pages/RecruiterManageJobsPage';
+import RecruiterApplicationsPage from './recruiter/pages/RecruiterApplicationsPage';
+import RecruiterInterviewsPage from './recruiter/pages/RecruiterInterviewsPage';
+import RecruiterMessagesPage from './recruiter/pages/RecruiterMessagesPage';
+import RecruiterAnalyticsPage from './recruiter/pages/RecruiterAnalyticsPage';
+import RecruiterCompanyProfilePage from './recruiter/pages/RecruiterCompanyProfilePage';
+import RecruiterPlaceholderPage from './recruiter/pages/RecruiterPlaceholderPage';
+import AdminLayout from './admin/pages/AdminLayout';
+import AdminDashboardPage from './admin/pages/AdminDashboardPage';
+import AdminApplicationsPage from './admin/pages/AdminApplicationsPage';
+import AdminUsersPage from './admin/pages/AdminUsersPage';
+import AdminCompaniesPage from './admin/pages/AdminCompaniesPage';
+import ProtectedRoute from './components/ui/ProtectedRoute';
 import './App.css';
+import './JobPortalDashboard.css';
 
 function App() {
   // Helper function to construct resume URL
@@ -21,7 +39,27 @@ function App() {
   const [refreshToken, setRefreshToken] = useState(null);
   const [userType, setUserType] = useState('jobseeker');
   const [currentUser, setCurrentUser] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileForm, setProfileForm] = useState({
+    mobile_number: '',
+    headline: '',
+    city: '',
+    country: '',
+    career_level: 'Experienced',
+    total_experience: '',
+    current_company: '',
+    current_job_title: '',
+    expected_salary: '',
+    preferred_job_type: 'Full-time',
+    preferred_work_mode: 'Remote',
+    skills: '',
+  });
+  const [profileSaveMessage, setProfileSaveMessage] = useState('');
   const [theme, setTheme] = useState('light');
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Job and application state
   const [jobs, setJobs] = useState([]);
@@ -38,10 +76,18 @@ function App() {
   const [applicantSkills, setApplicantSkills] = useState('');
   const [message, setMessage] = useState('');
   const [bookmarks, setBookmarks] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [showMyApplications, setShowMyApplications] = useState(true);
   const [applicationsView, setApplicationsView] = useState('all');
   const [applicationsSearch, setApplicationsSearch] = useState('');
-  const [recruiterPage, setRecruiterPage] = useState('postJob');
+  const [conversations, setConversations] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [conversationMessages, setConversationMessages] = useState([]);
+  const [interviews, setInterviews] = useState([]);
+  const [recruiterCompanyProfile, setRecruiterCompanyProfile] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [jobTitle, setJobTitle] = useState('');
   const [jobDescription, setJobDescription] = useState('');
   const [jobLocation, setJobLocation] = useState('');
@@ -66,16 +112,35 @@ function App() {
   const [applicationMessageText, setApplicationMessageText] = useState('');
   const [lastGroupedRefresh, setLastGroupedRefresh] = useState(null);
   const [analyticsData, setAnalyticsData] = useState(null);
+  const [adminDashboard, setAdminDashboard] = useState(null);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminCompanies, setAdminCompanies] = useState([]);
+  const [adminLoading, setAdminLoading] = useState(false);
   const [showSavedOnly, setShowSavedOnly] = useState(false);
 
   const totalApplications = applications.length;
-  const pendingApplications = applications.filter((application) => application.status === 'Pending').length;
-  const approvedApplications = applications.filter((application) => application.status === 'Approved').length;
-  const viewedApplications = applications.filter((application) => application.status === 'Viewed').length;
-  const rejectedApplications = applications.filter((application) => application.status === 'Rejected').length;
+  const pendingApplications = applications.filter((application) => ['APPLIED'].includes(application.status)).length;
+  const approvedApplications = applications.filter((application) => ['SELECTED', 'SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEW_COMPLETED', 'OFFER_SENT', 'JOINED'].includes(application.status)).length;
+  const viewedApplications = applications.filter((application) => ['RECRUITER_VIEWED'].includes(application.status)).length;
+  const rejectedApplications = applications.filter((application) => ['REJECTED'].includes(application.status)).length;
+
+  const formatStatus = (status) => {
+    if (!status) return 'Unknown';
+    const normalized = status.replace(/_/g, ' ');
+    return normalized.replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  const statusViewMap = {
+    all: null,
+    Pending: ['APPLIED'],
+    Viewed: ['RECRUITER_VIEWED'],
+    Approved: ['SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEW_COMPLETED', 'OFFER_SENT', 'SELECTED', 'JOINED'],
+    Rejected: ['REJECTED'],
+  };
 
   const filteredApplications = applications.filter((application) => {
-    const matchesView = applicationsView === 'all' || application.status === applicationsView;
+    const activeStatuses = statusViewMap[applicationsView];
+    const matchesView = !activeStatuses || activeStatuses.includes(application.status);
     const query = applicationsSearch.toLowerCase();
     const matchesSearch = !query || [
       application.job_title,
@@ -100,6 +165,18 @@ function App() {
     ? filteredJobs.filter((job) => bookmarks.some((bookmark) => Number(bookmark.job) === Number(job.id)))
     : filteredJobs;
 
+  const markNotificationsRead = async (notificationId) => {
+    try {
+      await markNotificationRead(notificationId);
+      setNotifications((prev) => prev.map((notification) => (
+        notification.id === notificationId ? { ...notification, is_read: true } : notification
+      )));
+      setUnreadNotificationCount((count) => Math.max(0, count - 1));
+    } catch (error) {
+      console.error('Failed to mark notification read:', error);
+    }
+  };
+
   // Check if user is already logged in on component mount
   useEffect(() => {
     const savedAccessToken = localStorage.getItem('accessToken');
@@ -110,15 +187,12 @@ function App() {
     
     if (savedAccessToken && savedRefreshToken && savedUserType && savedUser) {
       const parsedUser = JSON.parse(savedUser);
-      const normalizedUserType = savedUserType === 'recruiter' ? 'recruiter' : 'jobseeker';
+      const normalizedUserType = savedUserType === 'recruiter' || savedUserType === 'admin' ? savedUserType : 'jobseeker';
       setAccessToken(savedAccessToken);
       setRefreshToken(savedRefreshToken);
       setUserType(normalizedUserType);
       setCurrentUser(parsedUser);
       setIsAuthenticated(true);
-      if (normalizedUserType === 'recruiter') {
-        setRecruiterPage('applications');
-      }
     }
 
     if (savedTheme === 'dark' || savedTheme === 'light') {
@@ -131,6 +205,7 @@ function App() {
     if (isAuthenticated) {
       fetchJobs().then(setJobs).catch(console.error);
       refreshApplications_func();
+      refreshNotifications();
       if (userType === 'recruiter') {
         refreshGroupedApplications();
       } else {
@@ -139,6 +214,77 @@ function App() {
       }
     }
   }, [isAuthenticated, userType]);
+
+  useEffect(() => {
+    if (!isAuthenticated || userType !== 'admin') {
+      return;
+    }
+
+    let active = true;
+    setAdminLoading(true);
+    Promise.all([fetchAdminDashboard(), fetchUsers(), fetchCompanies()])
+      .then(([dashboardData, usersData, companiesData]) => {
+        if (!active) return;
+        setAdminDashboard(dashboardData);
+        setAdminUsers(usersData);
+        setAdminCompanies(companiesData);
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setAdminLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, userType]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    if (currentUser?.profile) {
+      setUserProfile(currentUser.profile);
+      return;
+    }
+
+    const loadProfile = async () => {
+      setProfileLoading(true);
+      setProfileError('');
+      try {
+        const profile = await fetchUserProfile();
+        setUserProfile(profile);
+      } catch (error) {
+        setProfileError(error.message || 'Failed to load profile');
+      } finally {
+        setProfileLoading(false);
+      }
+    };
+
+    loadProfile();
+  }, [isAuthenticated, currentUser]);
+
+  useEffect(() => {
+    if (!userProfile) {
+      return;
+    }
+
+    setProfileForm({
+      mobile_number: userProfile.mobile_number || '',
+      headline: userProfile.headline || '',
+      city: userProfile.city || '',
+      country: userProfile.country || '',
+      career_level: userProfile.career_level || 'Experienced',
+      total_experience: userProfile.total_experience != null ? String(userProfile.total_experience) : '',
+      current_company: userProfile.current_company || '',
+      current_job_title: userProfile.current_job_title || '',
+      expected_salary: userProfile.expected_salary || '',
+      preferred_job_type: userProfile.preferred_job_type || 'Full-time',
+      preferred_work_mode: userProfile.preferred_work_mode || 'Remote',
+      skills: Array.isArray(userProfile.skills) ? userProfile.skills.join(', ') : (userProfile.skills || ''),
+    });
+  }, [userProfile]);
 
   useEffect(() => {
     if (isAuthenticated && userType === 'recruiter') {
@@ -156,8 +302,30 @@ function App() {
     return undefined;
   }, [isAuthenticated, userType]);
 
-  const handleLoginSuccess = (token, refresh, userType, user) => {
-    const normalizedUserType = userType === 'recruiter' ? 'recruiter' : 'jobseeker';
+  useEffect(() => {
+    if (!isAuthenticated || userType !== 'recruiter') {
+      return;
+    }
+
+    let active = true;
+    setAnalyticsLoading(true);
+    fetchAnalytics()
+      .then((data) => {
+        if (!active) return;
+        setAnalyticsData(data);
+      })
+      .catch(console.error)
+      .finally(() => {
+        if (active) setAnalyticsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, userType]);
+
+  const handleLoginSuccess = (token, refresh, loginUserType, user) => {
+    const normalizedUserType = loginUserType === 'recruiter' || loginUserType === 'admin' ? loginUserType : 'jobseeker';
     localStorage.setItem('accessToken', token);
     localStorage.setItem('refreshToken', refresh);
     localStorage.setItem('userType', normalizedUserType);
@@ -166,9 +334,14 @@ function App() {
     setRefreshToken(refresh);
     setUserType(normalizedUserType);
     setCurrentUser(user || null);
+    setUserProfile(user?.profile || null);
     setIsAuthenticated(true);
     if (normalizedUserType === 'recruiter') {
-      setRecruiterPage('applications');
+      navigate('/recruiter/dashboard');
+    } else if (normalizedUserType === 'admin') {
+      navigate('/admin/dashboard');
+    } else {
+      navigate('/');
     }
   };
 
@@ -181,9 +354,45 @@ function App() {
     setRefreshToken(null);
     setUserType('jobseeker');
     setCurrentUser(null);
+    setUserProfile(null);
     setIsAuthenticated(false);
     setAnalyticsData(null);
     setBookmarks([]);
+    navigate('/login');
+  };
+
+  const parseListInput = (value) => value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const handleProfileFormChange = (field, value) => {
+    setProfileForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSaveProfile = async (event) => {
+    event.preventDefault();
+    setProfileError('');
+    setProfileSaveMessage('');
+    setProfileLoading(true);
+
+    try {
+      const payload = {
+        ...profileForm,
+        total_experience: profileForm.total_experience ? Number(profileForm.total_experience) : null,
+        skills: parseListInput(profileForm.skills),
+      };
+      const updatedProfile = await updateUserProfile(payload);
+      setUserProfile(updatedProfile);
+      const updatedUser = { ...currentUser, profile: updatedProfile };
+      setCurrentUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setProfileSaveMessage('✅ Profile updated successfully.');
+    } catch (error) {
+      setProfileError(error.message || 'Failed to save profile');
+    } finally {
+      setProfileLoading(false);
+    }
   };
 
   const toggleTheme = () => {
@@ -196,6 +405,16 @@ function App() {
     fetchApplications().then(setApplications).catch(console.error);
   };
 
+  // load interviews when recruiter is authenticated
+  useEffect(() => {
+    if (!isAuthenticated || userType !== 'recruiter') return;
+    let active = true;
+    fetchInterviews()
+      .then((data) => { if (active) setInterviews(data); })
+      .catch(console.error);
+    return () => { active = false; };
+  }, [isAuthenticated, userType]);
+
   const refreshGroupedApplications = async () => {
     try {
       const grouped = await fetchApplicationsGroupedByJob();
@@ -203,6 +422,16 @@ function App() {
       setLastGroupedRefresh(new Date());
     } catch (error) {
       console.error('Failed to refresh grouped applications:', error);
+    }
+  };
+
+  const refreshNotifications = async () => {
+    try {
+      const list = await fetchNotifications();
+      setNotifications(list);
+      setUnreadNotificationCount(list.filter((item) => !item.is_read).length);
+    } catch (error) {
+      console.error('Failed to load notifications:', error);
     }
   };
 
@@ -280,22 +509,22 @@ function App() {
     }
   };
 
-  const approveApplication = async (applicationId) => {
+  const shortlistApplication = async (applicationId) => {
     try {
-      await updateApplication(applicationId, { status: 'Approved' });
+      await updateApplication(applicationId, { status: 'SHORTLISTED' });
       refreshApplications_func();
       refreshGroupedApplications();
-      setMessage('✅ Application approved! Email sent to applicant.');
+      setMessage('✅ Application shortlisted. Candidate notified.');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
       setMessage(`❌ ${error.message}`);
-      console.error('Approval error:', error);
+      console.error('Shortlist error:', error);
     }
   };
 
   const rejectApplication = async (applicationId) => {
     try {
-      await updateApplication(applicationId, { status: 'Rejected' });
+      await updateApplication(applicationId, { status: 'REJECTED' });
       refreshApplications_func();
       refreshGroupedApplications();
       setMessage('✅ Application rejected.');
@@ -353,9 +582,9 @@ function App() {
     (total, group) => total + group.applications.length,
     0
   );
-  const recruiterPendingCount = recruiterApplications.filter((application) => application.status === 'Pending').length;
-  const recruiterViewedCount = recruiterApplications.filter((application) => application.status === 'Viewed').length;
-  const recruiterApprovedCount = recruiterApplications.filter((application) => application.status === 'Approved').length;
+  const recruiterPendingCount = recruiterApplications.filter((application) => application.status === 'APPLIED').length;
+  const recruiterViewedCount = recruiterApplications.filter((application) => application.status === 'RECRUITER_VIEWED').length;
+  const recruiterApprovedCount = recruiterApplications.filter((application) => ['SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEW_COMPLETED', 'OFFER_SENT', 'SELECTED', 'JOINED'].includes(application.status)).length;
   const recruiterApplicationBanner = recruiterApplicationCount > 0
     ? `You have ${recruiterApplicationCount} application${recruiterApplicationCount !== 1 ? 's' : ''} across your posted jobs.`
     : 'No applications yet for your posted jobs.';
@@ -392,6 +621,10 @@ function App() {
   }, [jobs, searchTerm, locationFilter, selectedCategory]);
 
   const apply = async (jobId) => {
+    if (!jobId) {
+      setMessage('❌ No job selected to apply for.');
+      return;
+    }
     if (!applicantName.trim()) {
       setMessage('❌ Please enter your name');
       return;
@@ -401,16 +634,30 @@ function App() {
       return;
     }
 
-    const payload = {
-      job: jobId,
-      applicant_name: applicantName.trim(),
-      applicant_email: applicantEmail.trim(),
-      resume,
-      cover_letter: coverLetter,
-      skills: applicantSkills.trim(),
-      status: 'Pending',
-    };
     try {
+      const payload = resumeFile
+        ? new FormData()
+        : {
+            job: jobId,
+            applicant_name: applicantName.trim(),
+            applicant_email: applicantEmail.trim(),
+            resume,
+            cover_letter: coverLetter,
+            skills: applicantSkills.trim(),
+            status: 'APPLIED',
+          };
+
+      if (resumeFile) {
+        payload.append('job', jobId);
+        payload.append('applicant_name', applicantName.trim());
+        payload.append('applicant_email', applicantEmail.trim());
+        payload.append('resume', resume);
+        payload.append('resume_file', resumeFile);
+        payload.append('cover_letter', coverLetter);
+        payload.append('skills', applicantSkills.trim());
+        payload.append('status', 'APPLIED');
+      }
+
       await createApplication(payload);
       refreshApplications_func();
       triggerApplicationUpdate();
@@ -418,6 +665,8 @@ function App() {
       setSelectedJobId(null);
       setApplicantName('');
       setApplicantEmail('');
+      setResume('');
+      setResumeFile(null);
       setCoverLetter('');
       setApplicantSkills('');
       setTimeout(() => setMessage(''), 3000);
@@ -484,6 +733,9 @@ function App() {
         }
     : null;
 
+  const showProfileOnboarding = isAuthenticated && !profileLoading && userType !== 'admin' && userProfile && !userProfile.profile_completed;
+  const showProfileLoading = isAuthenticated && profileLoading && !userProfile;
+
   const companySelectedJob = companyPageCompany && selectedJobId
     ? companyJobs.find((job) => job.id === selectedJobId)
     : null;
@@ -532,7 +784,7 @@ function App() {
     setCompanyRating(job.company_meta?.rating?.toString() || '');
     setCompanyEmployees(job.company_meta?.employees || '');
     setCompanyDescription(job.company_meta?.description || '');
-    setRecruiterPage('postJob');
+    navigate('/recruiter/post-job');
     setMessage('Editing existing job. Save changes or cancel to continue.');
   };
 
@@ -616,6 +868,158 @@ function App() {
     <>
       {!isAuthenticated ? (
         <LampLogin onLoginSuccess={handleLoginSuccess} />
+      ) : showProfileLoading ? (
+        <div className={`App ${theme}`}>
+          <div className="profile-onboarding-screen">
+            <div className="onboarding-card">
+              <h1>Loading your profile...</h1>
+              <p>Please wait while we load your account details.</p>
+            </div>
+          </div>
+        </div>
+      ) : showProfileOnboarding ? (
+        <div className={`App ${theme}`}>
+          <div className="profile-onboarding-screen">
+            <div className="onboarding-card">
+              <div className="onboarding-header">
+                <div>
+                  <h1>Complete your professional profile</h1>
+                  <p>Finish these details once so you can access the dashboard and job matches.</p>
+                </div>
+                <div className="profile-status-tag">{userType === 'recruiter' ? 'Recruiter' : 'Job Seeker'}</div>
+              </div>
+              {profileError && <div className="error-message">{profileError}</div>}
+              {profileSaveMessage && <div className="success-message">{profileSaveMessage}</div>}
+              <form className="profile-form" onSubmit={handleSaveProfile}>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Mobile number</label>
+                    <input
+                      type="tel"
+                      value={profileForm.mobile_number}
+                      onChange={(e) => handleProfileFormChange('mobile_number', e.target.value)}
+                      placeholder="Enter your phone number"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Headline</label>
+                    <input
+                      type="text"
+                      value={profileForm.headline}
+                      onChange={(e) => handleProfileFormChange('headline', e.target.value)}
+                      placeholder="e.g. Product Designer with 5+ years experience"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>City</label>
+                    <input
+                      type="text"
+                      value={profileForm.city}
+                      onChange={(e) => handleProfileFormChange('city', e.target.value)}
+                      placeholder="City"
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Country</label>
+                    <input
+                      type="text"
+                      value={profileForm.country}
+                      onChange={(e) => handleProfileFormChange('country', e.target.value)}
+                      placeholder="Country"
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Current title</label>
+                    <input
+                      type="text"
+                      value={profileForm.current_job_title}
+                      onChange={(e) => handleProfileFormChange('current_job_title', e.target.value)}
+                      placeholder="Current job title"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Current company</label>
+                    <input
+                      type="text"
+                      value={profileForm.current_company}
+                      onChange={(e) => handleProfileFormChange('current_company', e.target.value)}
+                      placeholder="Current employer"
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Total experience</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={profileForm.total_experience}
+                      onChange={(e) => handleProfileFormChange('total_experience', e.target.value)}
+                      placeholder="Years"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Expected salary</label>
+                    <input
+                      type="text"
+                      value={profileForm.expected_salary}
+                      onChange={(e) => handleProfileFormChange('expected_salary', e.target.value)}
+                      placeholder="e.g. $90,000 per year"
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Preferred job type</label>
+                    <select
+                      value={profileForm.preferred_job_type}
+                      onChange={(e) => handleProfileFormChange('preferred_job_type', e.target.value)}
+                    >
+                      <option>Full-time</option>
+                      <option>Part-time</option>
+                      <option>Internship</option>
+                      <option>Contract</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Preferred work mode</label>
+                    <select
+                      value={profileForm.preferred_work_mode}
+                      onChange={(e) => handleProfileFormChange('preferred_work_mode', e.target.value)}
+                    >
+                      <option>Remote</option>
+                      <option>Hybrid</option>
+                      <option>On-site</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Skills</label>
+                  <input
+                    type="text"
+                    value={profileForm.skills}
+                    onChange={(e) => handleProfileFormChange('skills', e.target.value)}
+                    placeholder="Comma-separated skills"
+                  />
+                </div>
+                <div className="form-actions">
+                  <button type="submit" className="submit-btn" disabled={profileLoading}>
+                    {profileLoading ? 'Saving...' : 'Save profile'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className={`App ${theme}`}>
       {/* Navigation */}
@@ -629,22 +1033,49 @@ function App() {
             {userType === 'recruiter' ? (
               <>
                 <button
-                  className={recruiterPage === 'postJob' ? 'active' : ''}
-                  onClick={() => setRecruiterPage('postJob')}
+                  className={location.pathname === '/recruiter/post-job' ? 'active' : ''}
+                  onClick={() => navigate('/recruiter/post-job')}
                 >
                   Post Job
                 </button>
                 <button
-                  className={recruiterPage === 'applications' ? 'active' : ''}
-                  onClick={() => setRecruiterPage('applications')}
+                  className={location.pathname === '/recruiter/applications' ? 'active' : ''}
+                  onClick={() => navigate('/recruiter/applications')}
                 >
                   Applications
                 </button>
                 <button
-                  className={recruiterPage === 'analytics' ? 'active' : ''}
-                  onClick={() => setRecruiterPage('analytics')}
+                  className={location.pathname === '/recruiter/dashboard' ? 'active' : ''}
+                  onClick={() => navigate('/recruiter/dashboard')}
                 >
                   Dashboard
+                </button>
+              </>
+            ) : userType === 'admin' ? (
+              <>
+                <button
+                  className={location.pathname === '/admin/dashboard' ? 'active' : ''}
+                  onClick={() => navigate('/admin/dashboard')}
+                >
+                  Dashboard
+                </button>
+                <button
+                  className={location.pathname === '/admin/applications' ? 'active' : ''}
+                  onClick={() => navigate('/admin/applications')}
+                >
+                  Applications
+                </button>
+                <button
+                  className={location.pathname === '/admin/users' ? 'active' : ''}
+                  onClick={() => navigate('/admin/users')}
+                >
+                  Users
+                </button>
+                <button
+                  className={location.pathname === '/admin/companies' ? 'active' : ''}
+                  onClick={() => navigate('/admin/companies')}
+                >
+                  Companies
                 </button>
               </>
             ) : (
@@ -896,261 +1327,14 @@ function App() {
             </div>
           </div>
         ) : (
-          <div className="jobseeker-section jsd-dashboard">
-            <section className="jsd-hero">
-              <div className="jsd-hero-copy">
-                <div className="jsd-eyebrow">Job seeker dashboard</div>
-                <h1>Move from search to shortlist in one smooth flow.</h1>
-                <p>Keep track of your active applications, discover fresh roles, and stay ahead with a premium overview.</p>
-                <div className="jsd-search-bar">
-                  <input
-                    type="text"
-                    placeholder="Search jobs, companies, or skills"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                  <div className="jsd-search-divider" />
-                  <button className="jsd-search-btn" type="button">Search</button>
-                </div>
-                <div className="jsd-category-pills">
-                  {['All Jobs', 'IT Jobs', 'Development', 'Design', 'Marketing', 'Sales'].map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      className={`jsd-pill ${selectedCategory === cat ? 'is-active' : ''}`}
-                      onClick={() => setSelectedCategory(cat)}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="jsd-hero-gauge">
-                <div className="jsd-gauge">
-                  <svg className="jsd-gauge-svg" viewBox="0 0 120 120" aria-label="Application progress gauge">
-                    <circle className="jsd-gauge-track" cx="60" cy="60" r="48" strokeWidth="10" fill="none" />
-                    <circle
-                      className="jsd-gauge-progress"
-                      cx="60"
-                      cy="60"
-                      r="48"
-                      strokeWidth="10"
-                      fill="none"
-                      strokeLinecap="round"
-                      strokeDasharray={2 * Math.PI * 48}
-                      strokeDashoffset={2 * Math.PI * 48 * (1 - dashboardProgress / 100)}
-                      transform="rotate(-90 60 60)"
-                    />
-                  </svg>
-                  <div className="jsd-gauge-center">
-                    <div className="jsd-gauge-value">{dashboardProgress}%</div>
-                    <div className="jsd-gauge-label">Momentum</div>
-                  </div>
-                </div>
-                <div className="jsd-gauge-caption">Your pace is strong with {approvedApplications} approvals and {viewedApplications} recruiter views.</div>
-              </div>
-            </section>
-
-            <div className="jsd-stat-strip">
-              <div className="jsd-stat-card">
-                <span className="jsd-stat-label">Applications</span>
-                <strong className="jsd-stat-value">{totalApplications}</strong>
-              </div>
-              <div className="jsd-stat-card">
-                <span className="jsd-stat-label">Pending</span>
-                <strong className="jsd-stat-value">{pendingApplications}</strong>
-              </div>
-              <div className="jsd-stat-card">
-                <span className="jsd-stat-label">Viewed</span>
-                <strong className="jsd-stat-value">{viewedApplications}</strong>
-              </div>
-              <div className="jsd-stat-card jsd-stat-card--accent">
-                <span className="jsd-stat-label">Approved</span>
-                <strong className="jsd-stat-value">{approvedApplications}</strong>
-              </div>
-            </div>
-
-            <div className="jsd-mid-grid">
-              <div className="jsd-panel">
-                <div className="jsd-panel-header">
-                  <h3>Recent activity</h3>
-                  <span>Live</span>
-                </div>
-                {dashboardTrackerRows.length === 0 ? (
-                  <div className="jsd-empty">Applications will appear here as you apply.</div>
-                ) : (
-                  <ul className="jsd-tracker-list">
-                    {dashboardTrackerRows.map((row) => (
-                      <li key={row.id} className="jsd-tracker-row">
-                        <div className="jsd-tracker-info">
-                          <strong>{row.title}</strong>
-                          <span>{row.company}</span>
-                        </div>
-                        <div className="jsd-tracker-meta">
-                          <span className="jsd-tracker-date">{row.date}</span>
-                          <span className="jsd-status-pill" style={{ color: row.status === 'Approved' ? '#166534' : row.status === 'Viewed' ? '#1d4ed8' : '#b45309' }}>
-                            {row.status}
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div className="jsd-panel">
-                <div className="jsd-panel-header">
-                  <h3>Opportunity mix</h3>
-                  <span>Today</span>
-                </div>
-                <ul className="jsd-legend">
-                  <li><span className="jsd-legend-dot" style={{ background: '#4F46E5' }} />Open roles<strong>{filteredJobs.length}</strong></li>
-                  <li><span className="jsd-legend-dot" style={{ background: '#7C3AED' }} />Applications<strong>{totalApplications}</strong></li>
-                  <li><span className="jsd-legend-dot" style={{ background: '#F59E0B' }} />Pending<strong>{pendingApplications}</strong></li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="jsd-recs-grid">
-              {featuredJobs.length === 0 ? (
-                <div className="jsd-panel">
-                  <div className="jsd-empty">No featured roles yet. Try a broader search.</div>
-                </div>
-              ) : (
-                featuredJobs.map((job) => (
-                  <div key={job.id} className="jsd-rec-card">
-                    <div className="jsd-rec-top">
-                      <h4>{job.title}</h4>
-                    </div>
-                    <button type="button" className="jsd-rec-company" onClick={() => openCompanyPage(job.company)}>
-                      {job.company}
-                    </button>
-                    <p className="jsd-rec-location">📍 {job.location}</p>
-                    {job.salary && <p className="jsd-rec-salary">💰 {job.salary}</p>}
-                    <button className="jsd-rec-cta" type="button" onClick={() => openCompanyPage(job.company)}>
-                      View role
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <section className="jobs-layout">
-              <aside className="sidebar">
-                <div className="sidebar-panel dashboard-sidebar">
-                  <div className="sidebar-brand">
-                    <div className="brand-logo">J</div>
-                    <div>
-                      <h3>Discover roles</h3>
-                      <p>Tailored to your search</p>
-                    </div>
-                  </div>
-                  <div className="sidebar-search-pill">
-                    <span>🔍</span>
-                    <input
-                      type="text"
-                      placeholder="Search jobs"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                  </div>
-                  <div className="sidebar-section">
-                    <h4>Location</h4>
-                    <div className="sidebar-search-pill">
-                      <span>📍</span>
-                      <input
-                        type="text"
-                        placeholder="City or remote"
-                        value={locationFilter}
-                        onChange={(e) => setLocationFilter(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="sidebar-section">
-                    <h4>Saved sections</h4>
-                    <div className="sidebar-category-list">
-                      <button
-                        type="button"
-                        className={`category-btn ${showSavedOnly ? 'active' : ''}`}
-                        onClick={() => setShowSavedOnly((value) => !value)}
-                      >
-                        Saved Jobs
-                      </button>
-                      <button type="button" className="category-btn">
-                        Interview Prep
-                      </button>
-                      <button type="button" className="category-btn">
-                        Profile
-                      </button>
-                    </div>
-                  </div>
-                  <div className="sidebar-section">
-                    <h4>Categories</h4>
-                    <div className="sidebar-category-list">
-                      {['All Jobs', 'IT Jobs', 'Development', 'Design', 'Marketing', 'Sales'].map((cat) => (
-                        <button
-                          key={cat}
-                          type="button"
-                          className={`category-btn ${selectedCategory === cat ? 'active' : ''}`}
-                          onClick={() => setSelectedCategory(cat)}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="sidebar-stat">
-                    {visibleJobs.length} open role{visibleJobs.length === 1 ? '' : 's'}
-                  </div>
-                </div>
-              </aside>
-
-              <div className="jobs-section">
-                <div className="jobs-container">
-                  <div className="job-list-header">
-                    <h2>Recent Job Openings ({visibleJobs.length})</h2>
-                    <button type="button" className="view-details-btn" onClick={() => { setShowSavedOnly(false); setSelectedCategory('All Jobs'); setSearchTerm(''); setLocationFilter(''); }}>
-                      Clear filters
-                    </button>
-                  </div>
-                  {visibleJobs.length === 0 ? (
-                    <p className="no-jobs">No jobs found. Try adjusting your search.</p>
-                  ) : (
-                    <div className="jobs-grid">
-                      {visibleJobs.map((job) => (
-                        <div key={job.id} className="job-card">
-                          <div className="job-header">
-                            <h3>{job.title}</h3>
-                            <button type="button" className="job-company-link" onClick={() => openCompanyPage(job.company)}>
-                              {job.company}
-                            </button>
-                          </div>
-                          <p className="job-location">📍 {job.location}</p>
-                          {job.salary && <p className="job-salary">💰 {job.salary}</p>}
-                          <p className="job-description">{(job.description || '').substring(0, 100)}...</p>
-                          <div className="job-footer">
-                            <BookmarkButton job={job} bookmarks={bookmarks} onChange={setBookmarks} />
-                            <button
-                              className="apply-btn"
-                              onClick={() => {
-                                if (userType === 'jobseeker') {
-                                  openCompanyPage(job.company);
-                                } else {
-                                  setSelectedJobId(job.id);
-                                }
-                              }}
-                            >
-                              Apply Now
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-          </div>
+          <JobPortalDashboard
+            currentUser={currentUser}
+            applications={applications}
+            bookmarks={bookmarks}
+            jobs={filteredJobs}
+            onApplyJob={setSelectedJobId}
+            onLogout={handleLogout}
+          />
         )}
           <MyApplicationsModule
             applications={applications}
@@ -1165,327 +1349,210 @@ function App() {
           />
         </>
       ) : (
-        <div className="recruiter-section">
-          <div className="recruiter-header">
-            <div>
-              <span className="section-eyebrow">Recruiter workspace</span>
-              <h2>Your hiring dashboard</h2>
-              <p>Post jobs, review applicants, and manage hiring from one polished recruiter experience.</p>
-            </div>
-            <div className="recruiter-header-actions">
-              <button
-                className={recruiterPage === 'postJob' ? 'page-btn active' : 'page-btn'}
-                onClick={() => setRecruiterPage('postJob')}
-              >
-                Post Job
-              </button>
-              <button
-                className={recruiterPage === 'applications' ? 'page-btn active' : 'page-btn'}
-                onClick={() => setRecruiterPage('applications')}
-              >
-                Applications {recruiterApplicationCount > 0 ? `(${recruiterApplicationCount})` : ''}
-              </button>
-              <button
-                className={recruiterPage === 'analytics' ? 'page-btn active' : 'page-btn'}
-                onClick={() => setRecruiterPage('analytics')}
-              >
-                Dashboard
-              </button>
-            </div>
-          </div>
-
-          <div className="recruiter-metrics-grid">
-            <div className="metric-card recruiter-metric-card">
-              <span>Posted Jobs</span>
-              <strong>{recruiterJobs.length}</strong>
-            </div>
-            <div className="metric-card recruiter-metric-card">
-              <span>Total Applicants</span>
-              <strong>{recruiterApplicationCount}</strong>
-            </div>
-            <div className="metric-card recruiter-metric-card">
-              <span>Pending Reviews</span>
-              <strong>{recruiterPendingCount}</strong>
-            </div>
-            <div className="metric-card recruiter-metric-card">
-              <span>Viewed Applications</span>
-              <strong>{recruiterViewedCount}</strong>
-            </div>
-          </div>
-
-          <div className="page-switcher">
-            <button
-              className={recruiterPage === 'postJob' ? 'page-btn active' : 'page-btn'}
-              onClick={() => setRecruiterPage('postJob')}
-            >
-              Post Job
-            </button>
-            <button
-              className={recruiterPage === 'applications' ? 'page-btn active' : 'page-btn'}
-              onClick={() => setRecruiterPage('applications')}
-            >
-              Applications {recruiterApplicationCount > 0 ? `(${recruiterApplicationCount})` : ''}
-            </button>
-            <button
-              className={recruiterPage === 'analytics' ? 'page-btn active' : 'page-btn'}
-              onClick={() => setRecruiterPage('analytics')}
-            >
-              Dashboard
-            </button>
-          </div>
-          {recruiterPage === 'postJob' ? (
-            <section className="post-job-section">
-              <div className="post-job-container">
-                <h2>{editingJobId ? 'Edit Job Posting' : 'Post a New Job'}</h2>
-                <form onSubmit={postJob} className="job-form">
-                  <div className="form-group">
-                    <label>Job Title</label>
-                    <input
-                      type="text"
-                      value={jobTitle}
-                      onChange={(e) => setJobTitle(e.target.value)}
-                      placeholder="e.g., Senior Developer"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Company</label>
-                    <div className="company-profile-note">
-                      Jobs will be posted for <strong>{recruiterCompanyName || 'your company'}</strong>.
-                    </div>
-                  </div>
-                  <div className="form-group">
-                    <label>Location</label>
-                    <input
-                      type="text"
-                      value={jobLocation}
-                      onChange={(e) => setJobLocation(e.target.value)}
-                      placeholder="e.g., New York, NY"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Salary</label>
-                    <input
-                      type="text"
-                      value={jobSalary}
-                      onChange={(e) => setJobSalary(e.target.value)}
-                      placeholder="e.g., $80,000 - $120,000 per year"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Job Description</label>
-                    <textarea
-                      value={jobDescription}
-                      onChange={(e) => setJobDescription(e.target.value)}
-                      placeholder="Describe the job role and requirements"
-                      rows="6"
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Category</label>
-                    <input
-                      type="text"
-                      value={jobCategory}
-                      onChange={(e) => setJobCategory(e.target.value)}
-                      placeholder="e.g. Development"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Required Skills</label>
-                    <textarea
-                      value={jobRequiredSkills}
-                      onChange={(e) => setJobRequiredSkills(e.target.value)}
-                      placeholder="e.g. React, Django, REST APIs"
-                      rows="3"
-                    />
-                  </div>
-                  <div className="form-actions">
-                    <button type="submit" className="submit-btn">
-                      {editingJobId ? 'Save Changes' : 'Post Job'}
-                    </button>
-                    {editingJobId && (
-                      <button type="button" className="cancel-btn" onClick={resetJobForm}>
-                        Cancel Edit
-                      </button>
-                    )}
-                  </div>
-                </form>
-                <div className="posted-jobs-panel">
-                  <h3>Your posted jobs</h3>
-                  {recruiterJobStats.length === 0 ? (
-                    <p className="no-jobs">You haven't posted any jobs yet.</p>
-                  ) : (
-                    <div className="posted-jobs-grid">
-                      {recruiterJobStats.map(({ job, applicationCount }) => (
-                        <div key={job.id} className="posted-job-card">
-                          <div className="posted-job-header">
-                            <h4>{job.title}</h4>
-                            <span className="applications-count">
-                              {applicationCount} applicant{applicationCount !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-                          <p>{job.company} • {job.location}</p>
-                          {job.salary && <p>Salary: {job.salary}</p>}
-                          <p>{job.description.substring(0, 100)}{job.description.length > 100 ? '...' : ''}</p>
-                          <div className="posted-job-actions">
-                            <button
-                              type="button"
-                              className="edit-btn"
-                              onClick={() => startJobEdit(job)}
-                            >
-                              Edit job
-                            </button>
-                            <button
-                              type="button"
-                              className="reject-btn"
-                              onClick={() => handleDeleteJob(job.id)}
-                            >
-                              Delete job
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </section>
-          ) : recruiterPage === 'applications' ? (
-            <section className="applications-page">
-              <div className="dashboard-header">
-                <h2>Applications Received</h2>
-                <p>{recruiterApplicationBanner}</p>
-                <div className="applications-controls">
-                  <button className="refresh-btn" onClick={refreshGroupedApplications}>
-                    Refresh applications
-                  </button>
-                  {lastGroupedRefresh && (
-                    <span className="last-updated">
-                      Last updated {lastGroupedRefresh.toLocaleTimeString()}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div className="applications-panel">
-                {displayedRecruiterGroups.length === 0 ? (
-                  <p>No applications yet.</p>
-                ) : (
-                  displayedRecruiterGroups.map(({ job, applications }) => (
-                    <div key={job.id} className="job-applications-card">
-                      <div className="job-applications-header">
-                        <div>
-                          <h3>{job.title}</h3>
-                          <p className="job-company-label">
-                            {job.company} • {job.location} {job.salary && `• ${job.salary}`}
-                          </p>
-                        </div>
-                        <span className="applications-count">
-                          {applications.length} applicant{applications.length !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                      <div className="applicant-list">
-                        {applications.map((application) => (
-                          <div key={application.id} className="application-card">
-                            <div className="application-card-accent" />
-                            <div className="application-card-header">
-                              <div className="application-card-title-wrap">
-                                <div className="application-card-icon">
-                                  {application.applicant_name ? application.applicant_name.charAt(0).toUpperCase() : 'A'}
-                                </div>
-                                <div>
-                                  <h3>{application.applicant_name || `Applicant ${application.applicant}`}</h3>
-                                  <div className="application-card-row">
-                                    <span>{application.job_title || job.title}</span>
-                                    <span>{new Date(application.applied_at).toLocaleDateString()}</span>
-                                  </div>
-                                  <div className={`application-card-unread ${application.unread_message_count ? 'active' : 'inactive'}`}>
-                                    {application.unread_message_count ? `${application.unread_message_count} unread` : 'No unread'}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="application-card-footer">
-                                <span className={`application-card-tag ${application.status.toLowerCase()}`}>
-                                  {application.status}
-                                </span>
-                                <button
-                                  className="view-details-btn"
-                                  onClick={() => openApplicationDetail(application.id)}
-                                >
-                                  View details
-                                </button>
-                              </div>
-                            </div>
-                            <div className="application-card-body">
-                              <div className="application-card-row">
-                                <strong>Resume</strong>
-                                {application.resume_file ? (
-                                  <a className="resume-link" href={getResumeUrl(application.resume_file)} target="_blank" rel="noreferrer">
-                                    Download PDF
-                                  </a>
-                                ) : application.resume ? (
-                                  `${application.resume.substring(0, 140)}${application.resume.length > 140 ? '...' : ''}`
-                                ) : (
-                                  'Not provided'
-                                )}
-                              </div>
-                              <div className="application-card-row">
-                                <strong>Cover Letter</strong>
-                                {application.cover_letter || 'Not provided'}
-                              </div>
-                            </div>
-                            {(application.status === 'Pending' || application.status === 'Viewed') && (
-                              <div className="applicant-actions">
-                                <button
-                                  className="approve-btn"
-                                  onClick={() => approveApplication(application.id)}
-                                >
-                                  ✓ Approve
-                                </button>
-                                <button
-                                  className="reject-btn"
-                                  onClick={() => rejectApplication(application.id)}
-                                >
-                                  ✗ Reject
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-          ) : recruiterPage === 'analytics' ? (
-            <section className="analytics-page">
-              <div className="analytics-card-grid">
-                <div className="analytics-card">
-                  <h3>Total Jobs</h3>
-                  <p>{analyticsData?.job_count ?? '—'}</p>
-                </div>
-                <div className="analytics-card">
-                  <h3>Total Applications</h3>
-                  <p>{analyticsData?.application_count ?? '—'}</p>
-                </div>
-                <div className="analytics-card">
-                  <h3>Active Users</h3>
-                  <p>{analyticsData?.user_count ?? '—'}</p>
-                </div>
-                <div className="analytics-card">
-                  <h3>Pending Applications</h3>
-                  <p>{analyticsData?.pending_applications ?? '—'}</p>
-                </div>
-                <div className="analytics-card">
-                  <h3>Approved Applications</h3>
-                  <p>{analyticsData?.approved_applications ?? '—'}</p>
-                </div>
-              </div>
-            </section>
-          ) : null}
-        </div>
+        <Routes>
+          <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} userType={userType} allowedRole="admin" />}>
+            <Route path="/admin/*" element={<AdminLayout currentUser={currentUser} onLogout={handleLogout} />}>
+              <Route
+                index
+                element={<Navigate to="dashboard" replace />}
+              />
+              <Route
+                path="dashboard"
+                element={<AdminDashboardPage dashboard={adminDashboard} loading={adminLoading} />}
+              />
+              <Route
+                path="applications"
+                element={<AdminApplicationsPage applications={applications} loading={adminLoading} onViewApplication={openApplicationDetail} />}
+              />
+              <Route
+                path="users"
+                element={<AdminUsersPage users={adminUsers} loading={adminLoading} />}
+              />
+              <Route
+                path="companies"
+                element={<AdminCompaniesPage companies={adminCompanies} loading={adminLoading} />}
+              />
+              <Route path="*" element={<Navigate to="dashboard" replace />} />
+            </Route>
+          </Route>
+          <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} userType={userType} allowedRole="recruiter" />}>
+            <Route path="/recruiter/*" element={<RecruiterLayout currentUser={currentUser} onLogout={handleLogout} />}>
+              <Route
+                index
+                element={<Navigate to="dashboard" replace />}
+              />
+              <Route
+                path="dashboard"
+                element={
+                  <RecruiterDashboardPage
+                    jobs={recruiterJobs}
+                    applications={recruiterApplications}
+                    loading={analyticsLoading}
+                    onQuickAction={(slug) => {
+                      if (slug === 'post-job') navigate('/recruiter/post-job');
+                      if (slug === 'applications') navigate('/recruiter/applications');
+                      if (slug === 'interviews') navigate('/recruiter/interviews');
+                    }}
+                  />
+                }
+              />
+              <Route
+                path="post-job"
+                element={
+                  <RecruiterPostJobPage
+                    form={{
+                      jobTitle,
+                      jobDescription,
+                      jobLocation,
+                      jobCompany,
+                      jobSalary,
+                      jobCategory,
+                      jobRequiredSkills,
+                      companyLogo,
+                      companyCoverImage,
+                      companyWebsite,
+                      companyIndustry,
+                      companySize,
+                      companyRating,
+                      companyEmployees,
+                      companyDescription,
+                    }}
+                    onFieldChange={(field, value) => {
+                      const setters = {
+                        jobTitle: setJobTitle,
+                        jobDescription: setJobDescription,
+                        jobLocation: setJobLocation,
+                        jobCompany: setJobCompany,
+                        jobSalary: setJobSalary,
+                        jobCategory: setJobCategory,
+                        jobRequiredSkills: setJobRequiredSkills,
+                        companyLogo: setCompanyLogo,
+                        companyCoverImage: setCompanyCoverImage,
+                        companyWebsite: setCompanyWebsite,
+                        companyIndustry: setCompanyIndustry,
+                        companySize: setCompanySize,
+                        companyRating: setCompanyRating,
+                        companyEmployees: setCompanyEmployees,
+                        companyDescription: setCompanyDescription,
+                      };
+                      setters[field]?.(value);
+                    }}
+                    onSubmit={postJob}
+                    onCancel={() => {
+                      resetJobForm();
+                      navigate('/recruiter/dashboard');
+                    }}
+                    isEditing={Boolean(editingJobId)}
+                    recruiterCompanyName={recruiterCompanyName}
+                  />
+                }
+              />
+              <Route
+                path="manage-jobs"
+                element={
+                  <RecruiterManageJobsPage
+                    jobs={recruiterJobs}
+                    loading={recruiterJobs.length === 0 && isAuthenticated}
+                    onEdit={(job) => {
+                      if (job) startJobEdit(job);
+                      else {
+                        resetJobForm();
+                        navigate('/recruiter/post-job');
+                      }
+                    }}
+                    onDelete={(job) => handleDeleteJob(job.id)}
+                  />
+                }
+              />
+              <Route
+                path="applications"
+                element={
+                  <RecruiterApplicationsPage
+                    applications={recruiterApplications}
+                    loading={applications.length === 0 && isAuthenticated}
+                    onViewProfile={openApplicationDetail}
+                    onShortlist={shortlistApplication}
+                    onReject={rejectApplication}
+                    onSchedule={() => navigate('/recruiter/interviews')}
+                    onQuickAction={(slug) => navigate(`/recruiter/${slug}`)}
+                  />
+                }
+              />
+              <Route
+                path="interviews"
+                element={
+                  <RecruiterInterviewsPage
+                    interviews={interviews}
+                    loading={interviews.length === 0 && isAuthenticated}
+                    onStart={(interview) => {
+                      // placeholder: open meeting link or mark started
+                      window.open(interview.meeting_link || '#', '_blank');
+                    }}
+                    onReschedule={(interview) => {
+                      // simple reschedule flow: navigate to application detail
+                      openApplicationDetail(interview.application);
+                    }}
+                    onCancel={async (interview) => {
+                      try {
+                        // mark interview cancelled via API
+                        const token = localStorage.getItem('accessToken');
+                        await fetch(`${API_BASE_URL}/interviews/${interview.id}/`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                          body: JSON.stringify({ status: 'CANCELLED' }),
+                        });
+                        setInterviews((prev) => prev.filter((i) => i.id !== interview.id));
+                        setMessage('✅ Interview cancelled');
+                        setTimeout(() => setMessage(''), 2500);
+                      } catch (err) {
+                        setMessage(`❌ ${err.message}`);
+                      }
+                    }}
+                  />
+                }
+              />
+              <Route
+                path="messages"
+                element={
+                  <RecruiterMessagesPage
+                    conversations={conversations}
+                    selectedConversation={selectedConversation}
+                    onSelectConversation={setSelectedConversation}
+                    messages={conversationMessages}
+                    onSendMessage={() => {} }
+                    loading={conversations.length === 0 && isAuthenticated}
+                    newMessage={newMessage}
+                    setNewMessage={setNewMessage}
+                  />
+                }
+              />
+              <Route
+                path="company-profile"
+                element={
+                  <RecruiterCompanyProfilePage
+                    companyProfile={recruiterCompanyProfile}
+                    loading={!recruiterCompanyProfile && isAuthenticated}
+                    onSave={(profile) => { setRecruiterCompanyProfile(profile); }}
+                  />
+                }
+              />
+              <Route
+                path="analytics"
+                element={<RecruiterAnalyticsPage analytics={analyticsData} loading={analyticsLoading} />}
+              />
+              <Route
+                path="subscription"
+                element={<RecruiterPlaceholderPage title="Subscription" description="Subscription is coming soon." actionLabel="Upgrade now" onAction={() => {}} />}
+              />
+              <Route
+                path="settings"
+                element={<RecruiterPlaceholderPage title="Settings" description="Recruiter settings are coming soon." actionLabel="Manage settings" onAction={() => {}} />}
+              />
+              <Route path="*" element={<Navigate to="dashboard" replace />} />
+            </Route>
+          </Route>
+          <Route path="*" element={<Navigate to={userType === 'admin' ? '/admin/dashboard' : '/recruiter/dashboard'} replace />} />
+        </Routes>
       )}
 
       {/* Application Modal */}
@@ -1590,8 +1657,8 @@ function App() {
             </div>
             <div className="modal-body application-detail-grid">
               <div className="detail-summary">
-                <div className={`status-pill status-pill--${selectedApplicationDetail.status.toLowerCase()}`}>
-                  {selectedApplicationDetail.status}
+                <div className={`status-pill status-pill--${selectedApplicationDetail.status.toLowerCase().replace(/[_\s]+/g, '-')}`}>
+                  {formatStatus(selectedApplicationDetail.status)}
                 </div>
                 <div className="detail-row">
                   <span>Applicant</span>
@@ -1610,10 +1677,10 @@ function App() {
                   <strong>{selectedApplicationDetail.viewed_at ? new Date(selectedApplicationDetail.viewed_at).toLocaleString() : 'Not yet'}</strong>
                 </div>
                 <div className="detail-actions">
-                  {selectedApplicationDetail.status === 'Pending' && (
+                      {['APPLIED', 'RECRUITER_VIEWED'].includes(selectedApplicationDetail.status) && (
                     <>
-                      <button className="approve-btn" onClick={() => approveApplication(selectedApplicationDetail.id)}>
-                        Approve
+                      <button className="approve-btn" onClick={() => shortlistApplication(selectedApplicationDetail.id)}>
+                        Shortlist
                       </button>
                       <button className="reject-btn" onClick={() => rejectApplication(selectedApplicationDetail.id)}>
                         Reject
@@ -1674,7 +1741,7 @@ function App() {
                     <strong>Messages</strong>
                     <span>{selectedApplicationDetail.messages?.length ?? 0} messages</span>
                   </div>
-                  {!selectedApplicationDetail ? null : selectedApplicationDetail.status === 'Pending' ? (
+                  {!selectedApplicationDetail ? null : selectedApplicationDetail.status === 'APPLIED' ? (
                     <div className="chat-disabled-note">
                       Messaging opens once the recruiter has reviewed this application.
                     </div>
@@ -1705,15 +1772,15 @@ function App() {
                     <textarea
                       value={applicationMessageText}
                       onChange={(e) => setApplicationMessageText(e.target.value)}
-                      placeholder={selectedApplicationDetail.status === 'Pending' ? 'Wait until this application is reviewed before sending a message.' : 'Write a message to the recruiter/applicant'}
+                      placeholder={selectedApplicationDetail.status === 'APPLIED' ? 'Wait until this application is reviewed before sending a message.' : 'Write a message to the recruiter/applicant'}
                       rows={3}
-                      disabled={selectedApplicationDetail.status === 'Pending'}
+                      disabled={selectedApplicationDetail.status === 'APPLIED'}
                     />
                     <button
                       type="button"
                       className="chat-send-btn"
                       onClick={sendApplicationMessage}
-                      disabled={selectedApplicationDetail.status === 'Pending' || !applicationMessageText.trim()}
+                      disabled={selectedApplicationDetail.status === 'APPLIED' || !applicationMessageText.trim()}
                     >
                       Send message
                     </button>
