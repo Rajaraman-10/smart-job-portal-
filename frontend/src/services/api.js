@@ -422,6 +422,19 @@ export async function fetchInterviews() {
   return response.json();
 }
 
+export async function fetchInterviewByRoom(roomId) {
+  const response = await fetch(`${API_BASE_URL}/interviews/${roomId}/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load interview room');
+  }
+  return response.json();
+}
+
 export async function fetchApplicationDetail(applicationId) {
   const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/`, {
     headers: {

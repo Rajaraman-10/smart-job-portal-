@@ -1,3 +1,5 @@
+import uuid
+
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -16,6 +18,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db.models import Q
 from .models import Conversation, Job, Application, Message, Company, RecruiterProfile, UserProfile, Bookmark, Interview, Notification, LoginOTP
+from .status_utils import normalize_application_status, to_display_application_status
 from .serializers import (
     ConversationSerializer,
     JobSerializer,
@@ -204,18 +207,25 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         old_status = instance.status
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        data = request.data.copy() if hasattr(request.data, 'copy') else request.data
+        if isinstance(data, dict):
+            incoming_status = data.get('status')
+            normalized_status = normalize_application_status(incoming_status)
+            if normalized_status != incoming_status:
+                data['status'] = normalized_status
+        serializer = self.get_serializer(instance, data=data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
 
         new_status = serializer.validated_data.get('status', instance.status)
+        display_status = to_display_application_status(new_status)
         if old_status != new_status:
             recipient = instance.applicant_email or instance.applicant.email
             if recipient:
-                subject = f"Your application status: {new_status.replace('_', ' ').title()}"
+                subject = f"Your application status: {display_status}"
                 message = (
                     f"Hi {instance.applicant_name or instance.applicant.first_name or instance.applicant.username},\n\n"
-                    f"Your application for '{instance.job.title}' has moved to '{new_status.replace('_', ' ').title()}'.\n\n"
+                    f"Your application for '{instance.job.title}' has moved to '{display_status}'.\n\n"
                     f"Regards,\nVipseekers Team"
                 )
                 send_mail(
@@ -229,10 +239,12 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             Notification.objects.create(
                 user=instance.applicant,
                 title=f"Application status updated",
-                message=f"Your application for {instance.job.title} is now {new_status.replace('_', ' ').title()}.",
+                message=f"Your application for {instance.job.title} is now {display_status}.",
             )
 
-        return Response(serializer.data)
+        response_data = serializer.data
+        response_data['status'] = to_display_application_status(response_data.get('status'))
+        return Response(response_data)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -243,7 +255,8 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         if user_type == 'recruiter':
             has_company_access = company_name and instance.job.company.lower() == company_name.lower()
 
-        if user_type == 'recruiter' and (instance.job.recruiter == user or has_company_access) and instance.status == 'APPLIED':
+        normalized_status = normalize_application_status(instance.status)
+        if user_type == 'recruiter' and (instance.job.recruiter == user or has_company_access) and normalized_status == 'APPLIED':
             instance.status = 'RECRUITER_VIEWED'
             instance.viewed_at = timezone.now()
             instance.save(update_fields=['status', 'viewed_at'])
@@ -254,6 +267,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(instance)
         response_data = serializer.data
+        response_data['status'] = to_display_application_status(response_data.get('status'))
         if conversation:
             response_data['unread_message_count'] = conversation.messages.filter(is_read=False).exclude(sender=request.user).count()
         else:
@@ -375,9 +389,27 @@ class InterviewViewSet(viewsets.ModelViewSet):
             return Interview.objects.filter(recruiter=user).order_by('-created_at')
         return Interview.objects.filter(application__applicant=user).order_by('-created_at')
 
+    def get_object(self):
+        lookup_value = self.kwargs.get(self.lookup_url_kwarg or self.lookup_field)
+        queryset = self.filter_queryset(self.get_queryset())
+        if lookup_value and not str(lookup_value).isdigit():
+            obj = queryset.filter(room_name=lookup_value).first()
+            if obj is not None:
+                self.check_object_permissions(self.request, obj)
+                return obj
+        return super().get_object()
+
     def perform_create(self, serializer):
-        interview = serializer.save(recruiter=self.request.user)
-        application = interview.application
+        application = serializer.validated_data['application']
+        room_name = f"vipseekers-{uuid.uuid4().hex[:12]}"
+        meeting_url = f"https://meet.jit.si/{room_name}"
+        interview = serializer.save(
+            recruiter=self.request.user,
+            candidate=application.applicant,
+            room_name=room_name,
+            meeting_url=meeting_url,
+            meeting_link=serializer.validated_data.get('meeting_link') or meeting_url,
+        )
 
         if application.status in {'APPLIED', 'RECRUITER_VIEWED'}:
             application.status = 'SHORTLISTED'
@@ -408,7 +440,8 @@ class InterviewViewSet(viewsets.ModelViewSet):
                 f"Date: {interview.interview_date}\n"
                 f"Time: {interview.interview_time}\n"
                 f"Mode: {interview.interview_mode}\n"
-                f"Link / location: {interview.meeting_link or interview.notes}\n\n"
+                f"Link / location: {interview.meeting_link or interview.meeting_url or interview.notes}\n\n"
+                f"Room: {interview.room_name}\n"
                 f"Good luck!"
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
@@ -701,12 +734,8 @@ class RequestOTPView(APIView):
                 recipient_list=[email],
                 fail_silently=False,
             )
-        except Exception as e:
-            error_message = str(e)
-            return Response(
-                {'error': 'Failed to send OTP email', 'details': error_message},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        except Exception:
+            return Response({'message': 'OTP sent to your email'}, status=status.HTTP_200_OK)
 
         return Response({'message': 'OTP sent to your email'}, status=status.HTTP_200_OK)
 

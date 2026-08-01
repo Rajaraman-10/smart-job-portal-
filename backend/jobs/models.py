@@ -215,9 +215,12 @@ class Interview(models.Model):
 
     application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name='interviews')
     recruiter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='interviews', null=True, blank=True)
+    candidate = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='candidate_interviews', null=True, blank=True)
     interview_date = models.DateField(null=True, blank=True)
     interview_time = models.TimeField(null=True, blank=True)
     meeting_link = models.CharField(max_length=500, blank=True, default='')
+    meeting_url = models.URLField(blank=True, default='')
+    room_name = models.CharField(max_length=255, blank=True, default='')
     interview_mode = models.CharField(max_length=50, blank=True, default='')
     interviewer_name = models.CharField(max_length=255, blank=True, default='')
     notes = models.TextField(blank=True, default='')

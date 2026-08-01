@@ -5,6 +5,7 @@ import LampLogin from './components/LampLogin';
 import MyApplicationsModule from './MyApplicationsModule';
 import BookmarkButton from './BookmarkButton';
 import { InterviewScheduler, InterviewSummary } from './InterviewPanel';
+import InterviewRoomPage from './InterviewRoomPage';
 import JobPortalDashboard from './JobPortalDashboard';
 import RecruiterLayout from './recruiter/pages/RecruiterLayout';
 import RecruiterDashboardPage from './recruiter/pages/RecruiterDashboardPage';
@@ -1350,6 +1351,7 @@ function App() {
         </>
       ) : (
         <Routes>
+          <Route path="/interview/:roomId" element={<InterviewRoomPage currentUser={currentUser} />} />
           <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} userType={userType} allowedRole="admin" />}>
             <Route path="/admin/*" element={<AdminLayout currentUser={currentUser} onLogout={handleLogout} />}>
               <Route
@@ -1485,8 +1487,8 @@ function App() {
                     interviews={interviews}
                     loading={interviews.length === 0 && isAuthenticated}
                     onStart={(interview) => {
-                      // placeholder: open meeting link or mark started
-                      window.open(interview.meeting_link || '#', '_blank');
+                      const roomId = interview.room_name || interview.meeting_url?.split('/').pop() || interview.id;
+                      navigate(`/interview/${roomId}`);
                     }}
                     onReschedule={(interview) => {
                       // simple reschedule flow: navigate to application detail

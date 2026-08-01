@@ -56,7 +56,7 @@ export default function RecruiterSidebar({ currentUser, onLogout }) {
               {group.map(({ path, label, Icon }) => (
                 <NavLink
                   key={path}
-                  to={path}
+                  to={`/recruiter/${path}`}
                   className={({ isActive }) => `group flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition ${
                     isActive
                       ? 'bg-[#0E7C66] text-white shadow-[0_0_0_1px_rgba(14,124,102,0.12)]'

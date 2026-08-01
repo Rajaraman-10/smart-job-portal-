@@ -3,6 +3,8 @@ from .models import Conversation, Job, Application, Message, Company, RecruiterP
 from django.contrib.auth.models import User
 from django.db.models import Q
 
+from .status_utils import normalize_application_status, to_display_application_status
+
 class InterviewSerializer(serializers.ModelSerializer):
     class Meta:
         model = Interview
@@ -10,16 +12,19 @@ class InterviewSerializer(serializers.ModelSerializer):
             'id',
             'application',
             'recruiter',
+            'candidate',
             'interview_date',
             'interview_time',
             'meeting_link',
+            'meeting_url',
+            'room_name',
             'interview_mode',
             'interviewer_name',
             'notes',
             'status',
             'created_at',
         ]
-        read_only_fields = ['recruiter', 'created_at']
+        read_only_fields = ['recruiter', 'candidate', 'meeting_url', 'room_name', 'created_at']
 
 
 class BookmarkSerializer(serializers.ModelSerializer):
@@ -238,6 +243,12 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'conversation_id',
         ]
         read_only_fields = ['job_title', 'job_company', 'applicant', 'message_count', 'unread_message_count', 'has_conversation']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if 'status' in data:
+            data['status'] = to_display_application_status(normalize_application_status(data['status']))
+        return data
 
     def get_message_count(self, obj):
         conversation = getattr(obj, 'conversation', None)
