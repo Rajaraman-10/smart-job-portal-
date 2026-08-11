@@ -85,10 +85,18 @@ class JobSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['recruiter', 'posted_at']
 
+    def _get_company(self, name):
+        if not hasattr(self, '_company_cache'):
+            self._company_cache = {}
+        key = (name or '').lower()
+        if key not in self._company_cache:
+            self._company_cache[key] = Company.objects.filter(name__iexact=name).first()
+        return self._company_cache[key]
+
     def get_company_meta(self, obj):
         fallback = {}
-        try:
-            company = Company.objects.get(name__iexact=obj.company)
+        company = self._get_company(obj.company)
+        if company:
             fallback = {
                 'name': company.name,
                 'logo': company.logo,
@@ -101,7 +109,7 @@ class JobSerializer(serializers.ModelSerializer):
                 'rating': company.rating,
                 'location': company.location,
             }
-        except Company.DoesNotExist:
+        else:
             fallback = {
                 'name': obj.company,
                 'logo': '',
@@ -232,6 +240,9 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'resume_file',
             'cover_letter',
             'skills',
+            'ai_match_score',
+            'ai_matched_skills',
+            'ai_missing_skills',
             'status',
             'applied_at',
             'viewed_at',
@@ -242,7 +253,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'has_conversation',
             'conversation_id',
         ]
-        read_only_fields = ['job_title', 'job_company', 'applicant', 'message_count', 'unread_message_count', 'has_conversation']
+        read_only_fields = ['job_title', 'job_company', 'applicant', 'message_count', 'unread_message_count', 'has_conversation', 'ai_match_score', 'ai_matched_skills', 'ai_missing_skills']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

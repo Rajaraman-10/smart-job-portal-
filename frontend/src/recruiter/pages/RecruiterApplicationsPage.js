@@ -226,6 +226,11 @@ export default function RecruiterApplicationsPage({ jobs = [], applications = []
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-4">
+                        {application.ai_match_score != null && (
+                          <span className="font-data inline-flex items-center gap-1 bg-[#E1F5EE] px-2.5 py-1 text-xs font-semibold text-[#085041]">
+                            AI {Math.round(application.ai_match_score)}%
+                          </span>
+                        )}
                         <div className="text-right">
                           <span className={`inline-flex px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[application.status] || 'bg-[#F1EFE8] text-[#444441]'}`}>
                             {formatStatus(application.status)}

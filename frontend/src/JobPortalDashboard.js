@@ -18,7 +18,7 @@ const SIDEBAR = [
   { label: "Dashboard", icon: LayoutGrid },
   { label: "Search Jobs", icon: Search },
   { label: "Saved Jobs", icon: Star },
-  { label: "Applied Jobs", icon: Briefcase },
+  { label: "My Applications", icon: Briefcase },
   { label: "Interviews", icon: CalendarDays },
   { label: "Notifications", icon: Bell },
   { label: "Messages", icon: MessagesSquare },
@@ -153,6 +153,7 @@ export default function JobPortalDashboard({ currentUser = {}, applications = []
         company: application.job_company || "Company",
         status: application.status || "Pending",
         appliedOn: application.applied_at ? new Date(application.applied_at).toLocaleDateString() : "Recently",
+        aiMatchScore: application.ai_match_score,
       }))
     : [];
 
@@ -185,7 +186,7 @@ export default function JobPortalDashboard({ currentUser = {}, applications = []
           <p className="dashboard-section-description">
             {activeMenu === "Search Jobs" && "Browse open roles and apply with one click."}
             {activeMenu === "Saved Jobs" && "Your bookmarked positions are saved here."}
-            {activeMenu === "Applied Jobs" && "Track the status of your job applications."}
+            {activeMenu === "My Applications" && "Track the status of your job applications."}
             {activeMenu === "Interviews" && "Upcoming interviews and next steps."}
             {activeMenu === "Notifications" && "Recent updates from recruiters and your applications."}
             {activeMenu === "Messages" && "Messages from recruiters and hiring teams."}
@@ -213,13 +214,24 @@ export default function JobPortalDashboard({ currentUser = {}, applications = []
                 searchResults.map((job) => (
                   <div key={job.id || `${job.position}-${job.company}`} className="dashboard-job-card">
                     <div>
+                      <div className="dashboard-job-card-topline">
+                        <span className="dashboard-job-card-badge">Featured</span>
+                        <span className="dashboard-job-card-age">{job.age}</span>
+                      </div>
                       <h3>{job.title || job.position}</h3>
                       <p>{job.company}</p>
                       <p className="dashboard-job-meta">{job.location} • {job.salary}</p>
+                      {job.tags?.length > 0 && (
+                        <div className="dashboard-job-card-tag-row">
+                          {job.tags.slice(0, 4).map((tag) => (
+                            <span key={tag} className="dashboard-job-card-tag">{tag}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="dashboard-job-card-footer">
                       <button className="dashboard-action-btn" type="button" onClick={() => onApplyJob?.(job.id)}>
-                        Apply
+                        Apply Now
                       </button>
                     </div>
                   </div>
@@ -251,7 +263,7 @@ export default function JobPortalDashboard({ currentUser = {}, applications = []
             )}
           </>
         );
-      case "Applied Jobs":
+      case "My Applications":
         return (
           <>
             {renderSectionHeader()}
@@ -263,11 +275,12 @@ export default function JobPortalDashboard({ currentUser = {}, applications = []
                     <th>Company</th>
                     <th>Status</th>
                     <th>Applied On</th>
+                    <th>AI Match</th>
                   </tr>
                 </thead>
                 <tbody>
                   {appliedJobs.length === 0 ? (
-                    <tr><td colSpan="4">No applications yet.</td></tr>
+                    <tr><td colSpan="5">No applications yet.</td></tr>
                   ) : (
                     appliedJobs.map((app, index) => (
                       <tr key={`${app.id}-${index}`}>
@@ -275,6 +288,13 @@ export default function JobPortalDashboard({ currentUser = {}, applications = []
                         <td>{app.company}</td>
                         <td>{app.status}</td>
                         <td>{app.appliedOn}</td>
+                        <td>
+                          {app.aiMatchScore != null ? (
+                            <span className="dashboard-ai-match-badge">{Math.round(app.aiMatchScore)}%</span>
+                          ) : (
+                            <span className="dashboard-ai-match-badge dashboard-ai-match-badge--pending">—</span>
+                          )}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -384,7 +404,7 @@ export default function JobPortalDashboard({ currentUser = {}, applications = []
     <>
       <div className="dashboard-grid dashboard-kpi-grid">
         {[
-          { label: "Applied Jobs", value: totalApplied, accent: "#2563eb", bg: "#eff6ff" },
+          { label: "My Applications", value: totalApplied, accent: "#2563eb", bg: "#eff6ff" },
           { label: "Shortlisted", value: totalShortlisted, accent: "#16a34a", bg: "#dcfce7" },
           { label: "Interviews", value: totalInterviews, accent: "#7c3aed", bg: "#ede9fe" },
           { label: "Saved Jobs", value: totalSaved, accent: "#ea580c", bg: "#ffedd5" },
@@ -492,7 +512,7 @@ export default function JobPortalDashboard({ currentUser = {}, applications = []
         <section className="dashboard-card dashboard-table-card">
           <div className="dashboard-card-header">
             <h2>Recent Applications</h2>
-            <button className="dashboard-link-btn" type="button" onClick={() => setActiveMenu("Applied Jobs")}>View all</button>
+            <button className="dashboard-link-btn" type="button" onClick={() => setActiveMenu("My Applications")}>View all</button>
           </div>
           <div className="dashboard-table-wrapper">
             <table className="dashboard-table">

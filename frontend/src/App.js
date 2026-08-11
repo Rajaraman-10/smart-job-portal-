@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, createJob, updateJob, createMessage, deleteJob, fetchBookmarks, fetchNotifications, fetchUserProfile, updateUserProfile, markNotificationRead, fetchConversations, fetchMessages, fetchInterviews, createConversation, fetchAnalytics, fetchAdminDashboard, fetchUsers, fetchCompanies } from './services/api';
 import LampLogin from './components/LampLogin';
-import MyApplicationsModule from './MyApplicationsModule';
 import BookmarkButton from './BookmarkButton';
 import { InterviewScheduler, InterviewSummary } from './InterviewPanel';
 import InterviewRoomPage from './InterviewRoomPage';
@@ -79,9 +78,6 @@ function App() {
   const [bookmarks, setBookmarks] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
-  const [showMyApplications, setShowMyApplications] = useState(true);
-  const [applicationsView, setApplicationsView] = useState('all');
-  const [applicationsSearch, setApplicationsSearch] = useState('');
   const [conversations, setConversations] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [selectedConversation, setSelectedConversation] = useState(null);
@@ -138,18 +134,6 @@ function App() {
     Approved: ['SHORTLISTED', 'INTERVIEW_SCHEDULED', 'INTERVIEW_COMPLETED', 'OFFER_SENT', 'SELECTED', 'JOINED'],
     Rejected: ['REJECTED'],
   };
-
-  const filteredApplications = applications.filter((application) => {
-    const activeStatuses = statusViewMap[applicationsView];
-    const matchesView = !activeStatuses || activeStatuses.includes(application.status);
-    const query = applicationsSearch.toLowerCase();
-    const matchesSearch = !query || [
-      application.job_title,
-      application.job_company,
-      application.status,
-    ].join(' ').toLowerCase().includes(query);
-    return matchesView && matchesSearch;
-  });
 
   const dashboardProgress = totalApplications > 0
     ? Math.round(((approvedApplications + viewedApplications) / totalApplications) * 100)
@@ -659,10 +643,17 @@ function App() {
         payload.append('status', 'APPLIED');
       }
 
-      await createApplication(payload);
+      const createdApplication = await createApplication(payload);
       refreshApplications_func();
       triggerApplicationUpdate();
-      setMessage('✅ Application submitted successfully!');
+      if (createdApplication?.ai_match_score != null) {
+        const score = Math.round(createdApplication.ai_match_score);
+        const missing = createdApplication.ai_missing_skills || [];
+        const missingNote = missing.length > 0 ? ` — missing: ${missing.join(', ')}` : '';
+        setMessage(`✅ Application submitted! AI Resume Match: ${score}%${missingNote}`);
+      } else {
+        setMessage('✅ Application submitted successfully!');
+      }
       setSelectedJobId(null);
       setApplicantName('');
       setApplicantEmail('');
@@ -670,7 +661,7 @@ function App() {
       setResumeFile(null);
       setCoverLetter('');
       setApplicantSkills('');
-      setTimeout(() => setMessage(''), 3000);
+      setTimeout(() => setMessage(''), 6000);
     } catch (error) {
       setMessage(`❌ ${error.message}`);
       console.error('Application submission error:', error);
@@ -734,7 +725,7 @@ function App() {
         }
     : null;
 
-  const showProfileOnboarding = isAuthenticated && !profileLoading && userType !== 'admin' && userProfile && !userProfile.profile_completed;
+  const showProfileOnboarding = isAuthenticated && !profileLoading && userType !== 'admin' && userType !== 'recruiter' && userProfile && !userProfile.profile_completed;
   const showProfileLoading = isAuthenticated && profileLoading && !userProfile;
 
   const companySelectedJob = companyPageCompany && selectedJobId
@@ -1337,17 +1328,6 @@ function App() {
             onLogout={handleLogout}
           />
         )}
-          <MyApplicationsModule
-            applications={applications}
-            filteredApplications={filteredApplications}
-            showMyApplications={showMyApplications}
-            setShowMyApplications={setShowMyApplications}
-            applicationsView={applicationsView}
-            setApplicationsView={setApplicationsView}
-            applicationsSearch={applicationsSearch}
-            setApplicationsSearch={setApplicationsSearch}
-            onViewDetails={openApplicationDetail}
-          />
         </>
       ) : (
         <Routes>
@@ -1714,6 +1694,35 @@ function App() {
                 <section className="detail-section">
                   <h3>Skills</h3>
                   <p>{selectedApplicationDetail.skills || 'Not provided'}</p>
+                </section>
+
+                <section className="detail-section">
+                  <h3>AI Resume Match</h3>
+                  {selectedApplicationDetail.ai_match_score != null ? (
+                    <div className="ai-match-panel">
+                      <div className="ai-match-score-row">
+                        <div className="ai-match-score-bar">
+                          <div
+                            className="ai-match-score-fill"
+                            style={{ width: `${Math.round(selectedApplicationDetail.ai_match_score)}%` }}
+                          />
+                        </div>
+                        <span className="ai-match-score-value">{Math.round(selectedApplicationDetail.ai_match_score)}%</span>
+                      </div>
+                      {selectedApplicationDetail.ai_matched_skills?.length > 0 && (
+                        <p className="ai-match-skills ai-match-skills--matched">
+                          <strong>Matched:</strong> {selectedApplicationDetail.ai_matched_skills.join(', ')}
+                        </p>
+                      )}
+                      {selectedApplicationDetail.ai_missing_skills?.length > 0 && (
+                        <p className="ai-match-skills ai-match-skills--missing">
+                          <strong>Missing:</strong> {selectedApplicationDetail.ai_missing_skills.join(', ')}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p>Resume not scanned yet.</p>
+                  )}
                 </section>
 
                 <section className="detail-section">

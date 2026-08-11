@@ -17,7 +17,8 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db.models import Q
-from .models import Conversation, Job, Application, Message, Company, RecruiterProfile, UserProfile, Bookmark, Interview, Notification, LoginOTP
+from .models import Conversation, Job, Application, Message, Company, UserProfile, Bookmark, Interview, Notification, LoginOTP
+from .resume_scanner import scan_application
 from .status_utils import normalize_application_status, to_display_application_status
 from .serializers import (
     ConversationSerializer,
@@ -175,6 +176,16 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             applicant_name=applicant_name,
             applicant_email=applicant_email,
         )
+
+        try:
+            scan_result = scan_application(application)
+            application.ai_match_score = scan_result['ai_match_score']
+            application.ai_matched_skills = scan_result['ai_matched_skills']
+            application.ai_missing_skills = scan_result['ai_missing_skills']
+            application.ai_scanned_at = timezone.now()
+            application.save(update_fields=['ai_match_score', 'ai_matched_skills', 'ai_missing_skills', 'ai_scanned_at'])
+        except Exception:
+            pass
 
         try:
             recruiter = application.job.recruiter

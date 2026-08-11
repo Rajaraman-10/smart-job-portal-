@@ -3,7 +3,6 @@ from django.db import models
 from django.utils import timezone
 
 import random
-import string
 
 
 class LoginOTP(models.Model):
@@ -83,6 +82,10 @@ class Application(models.Model):
     resume_file = models.FileField(upload_to='resumes/', blank=True, null=True)
     cover_letter = models.TextField(blank=True)
     skills = models.CharField(max_length=500, blank=True, default='')
+    ai_match_score = models.FloatField(blank=True, null=True)
+    ai_matched_skills = models.JSONField(blank=True, default=list)
+    ai_missing_skills = models.JSONField(blank=True, default=list)
+    ai_scanned_at = models.DateTimeField(blank=True, null=True)
     applied_at = models.DateTimeField(auto_now_add=True)
     viewed_at = models.DateTimeField(blank=True, null=True)
     status = models.CharField(

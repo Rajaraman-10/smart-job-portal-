@@ -86,6 +86,10 @@ export default function RecruiterPostJobPage({
 
           <div className="form-group">
             <span>Required skills</span>
+            <p className="form-hint">
+              Powers the AI resume match score shown on every application — list the specific,
+              comma-separated skills a candidate needs (e.g. React, Django, SQL).
+            </p>
             <textarea
               value={jobRequiredSkills}
               onChange={handleChange('jobRequiredSkills')}
@@ -93,6 +97,12 @@ export default function RecruiterPostJobPage({
               placeholder="React, Django, SQL"
               className="form-textarea"
             />
+            {skillChips.length === 0 && (
+              <p className="form-warning">
+                ⚠️ No required skills added yet — applicants to this job will get a generic AI
+                match score instead of a real skills match. Add a few to improve accuracy.
+              </p>
+            )}
           </div>
 
           {skillChips.length > 0 && (
