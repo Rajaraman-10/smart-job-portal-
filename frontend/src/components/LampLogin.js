@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import './LampLogin.css';
 import { login as apiLogin, requestOtp as apiRequestOtp, verifyOtp as apiVerifyOtp, loginWithGoogle as apiLoginWithGoogle } from '../services/api';
+import logo from '../assets/logo.png';
 
-export default function LampLogin({ onLoginSuccess }) {
+export default function LampLogin({ onLoginSuccess, onBack }) {
   const [isOn, setIsOn] = useState(false);
   const [step, setStep] = useState('role'); // 'role' | 'auth'
   const [selectedRole, setSelectedRole] = useState(null); // 'jobseeker' | 'recruiter' | 'admin'
@@ -147,6 +148,9 @@ export default function LampLogin({ onLoginSuccess }) {
   if (step === 'role') {
     return (
       <div className="ll-page">
+        <div className="ll-brand">
+          <img src={logo} alt="VIP Jobseeker" />
+        </div>
         <div className="ll-hint">Choose your role</div>
         <div style={{ display: 'flex', gap: 24, alignItems: 'center', justifyContent: 'center', width: '100%', maxWidth: 800 }}>
           <button
@@ -197,6 +201,28 @@ export default function LampLogin({ onLoginSuccess }) {
 
   return (
     <div className="ll-page">
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          style={{
+            position: 'absolute',
+            top: 20,
+            left: 20,
+            background: 'transparent',
+            border: 'none',
+            color: 'inherit',
+            opacity: 0.7,
+            cursor: 'pointer',
+            fontSize: 14,
+          }}
+        >
+          ← Back to home
+        </button>
+      )}
+      <div className="ll-brand ll-brand-sm">
+        <img src={logo} alt="VIP Jobseeker" />
+      </div>
       <div className="ll-hint" id="hint">Pull the string to toggle login</div>
 
       <div className="ll-stage">

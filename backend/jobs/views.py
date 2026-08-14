@@ -17,7 +17,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db.models import Q
-from .models import Conversation, Job, Application, Message, Company, UserProfile, Bookmark, Interview, Notification, LoginOTP
+from .models import Conversation, Job, Application, Message, Company, UserProfile, Bookmark, Interview, Notification, LoginOTP, Resume
 from .resume_scanner import scan_application
 from .status_utils import normalize_application_status, to_display_application_status
 from .serializers import (
@@ -33,7 +33,11 @@ from .serializers import (
     InterviewSerializer,
     NotificationSerializer,
     CompanySerializer,
+    ResumeSerializer,
 )
+
+
+FREE_RESUME_EDIT_LIMIT = 4
 
 
 def get_user_role(user):
@@ -171,11 +175,19 @@ class ApplicationViewSet(viewsets.ModelViewSet):
         applicant_name = serializer.validated_data.get('applicant_name') or applicant_user.first_name or applicant_user.username
         applicant_email = serializer.validated_data.get('applicant_email') or applicant_user.email
 
-        application = serializer.save(
-            applicant=applicant_user,
-            applicant_name=applicant_name,
-            applicant_email=applicant_email,
-        )
+        save_kwargs = {
+            'applicant': applicant_user,
+            'applicant_name': applicant_name,
+            'applicant_email': applicant_email,
+        }
+
+        resume_id = self.request.data.get('resume_id')
+        if resume_id and not serializer.validated_data.get('resume_file'):
+            saved_resume = Resume.objects.filter(id=resume_id, user=applicant_user).first()
+            if saved_resume:
+                save_kwargs['resume_file'] = saved_resume.file
+
+        application = serializer.save(**save_kwargs)
 
         try:
             scan_result = scan_application(application)
@@ -224,9 +236,46 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             normalized_status = normalize_application_status(incoming_status)
             if normalized_status != incoming_status:
                 data['status'] = normalized_status
+
+        user = request.user
+        is_own_application = get_user_role(user) == 'jobseeker' and instance.applicant == user
+        new_resume_file = request.FILES.get('resume_file')
+        new_resume_text = data.get('resume') if isinstance(data, dict) else None
+        is_resume_change = is_own_application and (
+            bool(new_resume_file)
+            or (new_resume_text is not None and new_resume_text.strip() and new_resume_text.strip() != (instance.resume or '').strip())
+        )
+
+        if is_resume_change:
+            profile, _ = UserProfile.objects.get_or_create(user=user)
+            if instance.resume_edit_count >= FREE_RESUME_EDIT_LIMIT and not profile.is_subscribed:
+                return Response(
+                    {
+                        'detail': f'You have used all {FREE_RESUME_EDIT_LIMIT} free resume edits for this application. Upgrade to continue editing.',
+                        'code': 'RESUME_EDIT_LIMIT_REACHED',
+                        'resume_edit_count': instance.resume_edit_count,
+                        'free_limit': FREE_RESUME_EDIT_LIMIT,
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
         serializer = self.get_serializer(instance, data=data, partial=partial)
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
+
+        if is_resume_change:
+            instance.resume_edit_count += 1
+            try:
+                scan_result = scan_application(instance)
+                instance.ai_match_score = scan_result['ai_match_score']
+                instance.ai_matched_skills = scan_result['ai_matched_skills']
+                instance.ai_missing_skills = scan_result['ai_missing_skills']
+                instance.ai_scanned_at = timezone.now()
+            except Exception:
+                pass
+            instance.save(update_fields=[
+                'resume_edit_count', 'ai_match_score', 'ai_matched_skills', 'ai_missing_skills', 'ai_scanned_at',
+            ])
 
         new_status = serializer.validated_data.get('status', instance.status)
         display_status = to_display_application_status(new_status)
@@ -385,6 +434,33 @@ class BookmarkViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
 
+MAX_RESUMES_PER_USER = 5
+
+
+class ResumeViewSet(viewsets.ModelViewSet):
+    serializer_class = ResumeSerializer
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+    parser_classes = [FormParser, MultiPartParser, JSONParser]
+
+    def get_queryset(self):
+        return Resume.objects.filter(user=self.request.user).order_by('-uploaded_at')
+
+    def perform_create(self, serializer):
+        if Resume.objects.filter(user=self.request.user).count() >= MAX_RESUMES_PER_USER:
+            raise PermissionDenied(f'You can keep at most {MAX_RESUMES_PER_USER} resumes. Delete one before uploading another.')
+        is_first = not Resume.objects.filter(user=self.request.user).exists()
+        serializer.save(user=self.request.user, is_primary=is_first)
+
+    @action(detail=True, methods=['post'])
+    def set_primary(self, request, pk=None):
+        resume = self.get_object()
+        Resume.objects.filter(user=request.user).exclude(id=resume.id).update(is_primary=False)
+        resume.is_primary = True
+        resume.save(update_fields=['is_primary'])
+        return Response(ResumeSerializer(resume, context={'request': request}).data)
+
+
 class InterviewViewSet(viewsets.ModelViewSet):
     queryset = Interview.objects.all().order_by('-created_at')
     serializer_class = InterviewSerializer
@@ -507,6 +583,23 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
         if is_admin(user):
             return User.objects.all().order_by('id')
         return User.objects.filter(id=user.id)
+
+    @action(detail=True, methods=['post'], url_path='toggle-active')
+    def toggle_active(self, request, pk=None):
+        if not is_admin(request.user):
+            return Response({'detail': 'Admin access required.'}, status=status.HTTP_403_FORBIDDEN)
+
+        target = self.get_queryset().filter(pk=pk).first()
+        if target is None:
+            return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
+        if target.id == request.user.id:
+            return Response({'detail': 'You cannot suspend your own account.'}, status=status.HTTP_400_BAD_REQUEST)
+        if is_admin(target):
+            return Response({'detail': 'Admin accounts cannot be suspended.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        target.is_active = not target.is_active
+        target.save(update_fields=['is_active'])
+        return Response(UserSerializer(target, context={'request': request}).data)
 
 
 class CompanyViewSet(viewsets.ReadOnlyModelViewSet):

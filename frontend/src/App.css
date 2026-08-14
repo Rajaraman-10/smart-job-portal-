@@ -442,6 +442,17 @@
   color: #64748b;
 }
 
+.saved-resume-select {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
+
 .form-warning {
   margin: 0;
   font-size: 0.82rem;
@@ -3213,6 +3224,18 @@
   color: #dc2626;
 }
 
+.resume-edit-count {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.resume-update-status {
+  margin: 12px 0 0;
+  font-size: 0.9rem;
+  color: #1f2937;
+}
+
 .chat-header {
   display: flex;
   justify-content: space-between;
@@ -3403,3 +3426,325 @@
   }
 }
 
+
+
+/* --- Auto-added dark-mode text-color overrides (generic gray/near-black body text) --- */
+.App.dark .onboarding-header p {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .form-group label {
+  color: #e5e7eb !important;
+}
+
+.App.dark .form-group input,
+.App.dark .form-group select {
+  color: #e5e7eb !important;
+}
+
+.App.dark .muted-text {
+  color: #94a3b8 !important;
+}
+
+.App.dark .tiny-label {
+  color: #94a3b8 !important;
+}
+
+.App.dark .tips-list {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .form-group span {
+  color: #e5e7eb !important;
+}
+
+.App.dark .form-input,
+.App.dark .form-textarea {
+  color: #e5e7eb !important;
+}
+
+.App.dark .form-hint {
+  color: #94a3b8 !important;
+}
+
+.App.dark .saved-resume-select {
+  color: #e5e7eb !important;
+}
+
+.App.dark .logo-icon {
+  color: #e5e7eb !important;
+}
+
+.App.dark .search-btn {
+  color: #e5e7eb !important;
+}
+
+.App.dark .sidebar-header h3 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .sidebar-header p {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .category-btn {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .jobs-container h2 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .job-header h3 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .job-location,
+.App.dark .job-salary {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .job-description {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .no-jobs {
+  color: #94a3b8 !important;
+}
+
+.App.dark .payment-panel {
+  color: #e5e7eb !important;
+}
+
+.App.dark .banner-badge {
+  color: #e5e7eb !important;
+}
+
+.App.dark .App .apply-note {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .banner-btn {
+  color: #e5e7eb !important;
+}
+
+.App.dark .job-card h3 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .job-location {
+  color: #9ca3af !important;
+}
+
+.App.dark .apply-btn:hover {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .no-jobs {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .recruiter-header p {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .recruiter-metric-card span {
+  color: #e5e7eb !important;
+}
+
+.App.dark .page-btn {
+  color: #e5e7eb !important;
+}
+
+.App.dark .post-job-section h2 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .dashboard-header p {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .job-company-label {
+  color: #94a3b8 !important;
+}
+
+.App.dark .applicant-name {
+  color: #e5e7eb !important;
+}
+
+.App.dark .applicant-meta {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .applicant-details-grid p,
+.App.dark .applicant-details-grid a {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .company-page-banner {
+  color: #e5e7eb !important;
+}
+
+.App.dark .company-title-group h2 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .company-title-group p {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .company-no-website {
+  color: #9ca3af !important;
+}
+
+.App.dark .company-logo-placeholder {
+  color: #e5e7eb !important;
+}
+
+.App.dark .company-close-btn {
+  color: #e5e7eb !important;
+}
+
+.App.dark .company-application-panel-header p {
+  color: #94a3b8 !important;
+}
+
+.App.dark .company-stat-card span {
+  color: #94a3b8 !important;
+}
+
+.App.dark .company-stat-card strong {
+  color: #e5e7eb !important;
+}
+
+.App.dark .company-meta-item span {
+  color: #94a3b8 !important;
+}
+
+.App.dark .company-meta-item strong {
+  color: #e5e7eb !important;
+}
+
+.App.dark .company-job-description {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .company-apply-banner p {
+  color: #e5e7eb !important;
+}
+
+.App.dark .company-job-card p {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .job-applications-header h3 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .job-company-label {
+  color: #9ca3af !important;
+}
+
+.App.dark .metric-card span {
+  color: #94a3b8 !important;
+}
+
+.App.dark .metric-card strong {
+  color: #e5e7eb !important;
+}
+
+.App.dark .application-card-row {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .application-card-tag.subtle {
+  color: #94a3b8 !important;
+}
+
+.App.dark .application-note {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .file-hint {
+  color: #9ca3af !important;
+}
+
+.App.dark .back-btn {
+  color: #e5e7eb !important;
+}
+
+.App.dark .sidebar-brand h3 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .sidebar-brand p {
+  color: #9ca3af !important;
+}
+
+.App.dark .sidebar-search-pill input {
+  color: #e5e7eb !important;
+}
+
+.App.dark .sidebar-nav-btn {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .sidebar-section h4 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .sidebar-caption {
+  color: #9ca3af !important;
+}
+
+.App.dark .detail-section h3 {
+  color: #e5e7eb !important;
+}
+
+.App.dark .detail-row {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .detail-row strong {
+  color: #e5e7eb !important;
+}
+
+.App.dark .ai-match-score-value {
+  color: #e5e7eb !important;
+}
+
+.App.dark .ai-match-skills {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .resume-edit-count {
+  color: #94a3b8 !important;
+}
+
+.App.dark .resume-update-status {
+  color: #e5e7eb !important;
+}
+
+.App.dark .chat-message-header {
+  color: #94a3b8 !important;
+}
+
+.App.dark .chat-content {
+  color: #e5e7eb !important;
+}
+
+.App.dark .chat-message-meta {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .application-card-unread.inactive {
+  color: #cbd5e1 !important;
+}
+
+.App.dark .empty-chat {
+  color: #9ca3af !important;
+}
+
+.App.dark .modal-subtitle {
+  color: #9ca3af !important;
+}

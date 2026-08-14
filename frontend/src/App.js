@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, createJob, updateJob, createMessage, deleteJob, fetchBookmarks, fetchNotifications, fetchUserProfile, updateUserProfile, markNotificationRead, fetchConversations, fetchMessages, fetchInterviews, createConversation, fetchAnalytics, fetchAdminDashboard, fetchUsers, fetchCompanies } from './services/api';
+import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, updateApplicationResume, createJob, updateJob, createMessage, deleteJob, fetchBookmarks, fetchResumes, uploadResume, deleteResume, setPrimaryResume, uploadProfilePhoto, fetchNotifications, fetchUserProfile, updateUserProfile, markNotificationRead, fetchConversations, fetchMessages, fetchInterviews, fetchAnalytics, fetchAdminDashboard, fetchUsers, fetchCompanies, toggleUserActive } from './services/api';
 import LampLogin from './components/LampLogin';
+import HomePage from './components/HomePage';
 import BookmarkButton from './BookmarkButton';
 import { InterviewScheduler, InterviewSummary } from './InterviewPanel';
 import InterviewRoomPage from './InterviewRoomPage';
@@ -16,6 +17,7 @@ import RecruiterMessagesPage from './recruiter/pages/RecruiterMessagesPage';
 import RecruiterAnalyticsPage from './recruiter/pages/RecruiterAnalyticsPage';
 import RecruiterCompanyProfilePage from './recruiter/pages/RecruiterCompanyProfilePage';
 import RecruiterPlaceholderPage from './recruiter/pages/RecruiterPlaceholderPage';
+import RecruiterSettingsPage from './recruiter/pages/RecruiterSettingsPage';
 import AdminLayout from './admin/pages/AdminLayout';
 import AdminDashboardPage from './admin/pages/AdminDashboardPage';
 import AdminApplicationsPage from './admin/pages/AdminApplicationsPage';
@@ -32,6 +34,15 @@ function App() {
     if (resumePath.startsWith('http')) return resumePath;
     const baseUrl = API_BASE_URL.replace('/api', '');
     return `${baseUrl}/media/${resumePath}`;
+  };
+
+  // Helper function to construct a full URL for an already-relative media path
+  // (DRF FileField/ImageField serializes to a value already prefixed with MEDIA_URL, e.g. "/media/...")
+  const getMediaUrl = (path) => {
+    if (!path) return '';
+    if (path.startsWith('http')) return path;
+    const baseUrl = API_BASE_URL.replace('/api', '');
+    return path.startsWith('/') ? `${baseUrl}${path}` : `${baseUrl}/media/${path}`;
   };
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -55,9 +66,11 @@ function App() {
     preferred_job_type: 'Full-time',
     preferred_work_mode: 'Remote',
     skills: '',
+    email_notifications: true,
   });
   const [profileSaveMessage, setProfileSaveMessage] = useState('');
   const [theme, setTheme] = useState('light');
+  const [showAuth, setShowAuth] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -76,12 +89,19 @@ function App() {
   const [applicantSkills, setApplicantSkills] = useState('');
   const [message, setMessage] = useState('');
   const [bookmarks, setBookmarks] = useState([]);
+  const [resumes, setResumes] = useState([]);
+  const [selectedResumeId, setSelectedResumeId] = useState('');
+  const [resumeManagerStatus, setResumeManagerStatus] = useState('');
+  const [photoUploadStatus, setPhotoUploadStatus] = useState('');
   const [notifications, setNotifications] = useState([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [conversations, setConversations] = useState([]);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [conversationMessages, setConversationMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messageSendError, setMessageSendError] = useState('');
   const [interviews, setInterviews] = useState([]);
   const [recruiterCompanyProfile, setRecruiterCompanyProfile] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -107,6 +127,9 @@ function App() {
   const [selectedApplicationId, setSelectedApplicationId] = useState(null);
   const [selectedApplicationDetail, setSelectedApplicationDetail] = useState(null);
   const [applicationMessageText, setApplicationMessageText] = useState('');
+  const [editResumeFile, setEditResumeFile] = useState(null);
+  const [resumeUpdateStatus, setResumeUpdateStatus] = useState('');
+  const [resumeUpdateLoading, setResumeUpdateLoading] = useState(false);
   const [lastGroupedRefresh, setLastGroupedRefresh] = useState(null);
   const [analyticsData, setAnalyticsData] = useState(null);
   const [adminDashboard, setAdminDashboard] = useState(null);
@@ -185,20 +208,36 @@ function App() {
     }
   }, []);
 
+  // Public job listings for the marketing home page (no auth required)
+  useEffect(() => {
+    if (!isAuthenticated) {
+      fetchJobs().then(setJobs).catch(console.error);
+    }
+  }, [isAuthenticated]);
+
   // Fetch data only when authenticated
   useEffect(() => {
     if (isAuthenticated) {
       fetchJobs().then(setJobs).catch(console.error);
       refreshApplications_func();
       refreshNotifications();
+      refreshConversations();
       if (userType === 'recruiter') {
         refreshGroupedApplications();
       } else {
         setGroupedApplications([]);
         fetchBookmarks().then(setBookmarks).catch(console.error);
+        fetchResumes().then(setResumes).catch(console.error);
       }
     }
   }, [isAuthenticated, userType]);
+
+  useEffect(() => {
+    if (selectedJobId) {
+      const primaryResume = resumes.find((r) => r.is_primary);
+      setSelectedResumeId(primaryResume ? String(primaryResume.id) : '');
+    }
+  }, [selectedJobId, resumes]);
 
   useEffect(() => {
     if (!isAuthenticated || userType !== 'admin') {
@@ -268,6 +307,7 @@ function App() {
       preferred_job_type: userProfile.preferred_job_type || 'Full-time',
       preferred_work_mode: userProfile.preferred_work_mode || 'Remote',
       skills: Array.isArray(userProfile.skills) ? userProfile.skills.join(', ') : (userProfile.skills || ''),
+      email_notifications: userProfile.email_notifications !== false,
     });
   }, [userProfile]);
 
@@ -343,6 +383,7 @@ function App() {
     setIsAuthenticated(false);
     setAnalyticsData(null);
     setBookmarks([]);
+    setResumes([]);
     navigate('/login');
   };
 
@@ -353,6 +394,53 @@ function App() {
 
   const handleProfileFormChange = (field, value) => {
     setProfileForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleUploadResume = async (file, label) => {
+    if (!file) return;
+    setResumeManagerStatus('');
+    try {
+      const newResume = await uploadResume(file, label);
+      setResumes((prev) => [newResume, ...prev]);
+      setResumeManagerStatus('✅ Resume uploaded.');
+    } catch (error) {
+      setResumeManagerStatus(`❌ ${error.message}`);
+    }
+  };
+
+  const handleUploadProfilePhoto = async (file) => {
+    if (!file) return;
+    setPhotoUploadStatus('');
+    try {
+      const updatedProfile = await uploadProfilePhoto(file);
+      setUserProfile(updatedProfile);
+      const updatedUser = { ...currentUser, profile: updatedProfile };
+      setCurrentUser(updatedUser);
+      localStorage.setItem('user', JSON.stringify(updatedUser));
+      setPhotoUploadStatus('✅ Photo updated.');
+    } catch (error) {
+      setPhotoUploadStatus(`❌ ${error.message}`);
+    }
+  };
+
+  const handleDeleteResume = async (resumeId) => {
+    setResumeManagerStatus('');
+    try {
+      await deleteResume(resumeId);
+      setResumes((prev) => prev.filter((r) => r.id !== resumeId));
+    } catch (error) {
+      setResumeManagerStatus(`❌ ${error.message}`);
+    }
+  };
+
+  const handleSetPrimaryResume = async (resumeId) => {
+    setResumeManagerStatus('');
+    try {
+      await setPrimaryResume(resumeId);
+      setResumes((prev) => prev.map((r) => ({ ...r, is_primary: r.id === resumeId })));
+    } catch (error) {
+      setResumeManagerStatus(`❌ ${error.message}`);
+    }
   };
 
   const handleSaveProfile = async (event) => {
@@ -420,6 +508,49 @@ function App() {
     }
   };
 
+  const refreshConversations = async () => {
+    setConversationsLoading(true);
+    try {
+      const list = await fetchConversations();
+      setConversations(list);
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+    } finally {
+      setConversationsLoading(false);
+    }
+  };
+
+  const handleSelectConversation = async (conversation) => {
+    setSelectedConversation(conversation);
+    setMessageSendError('');
+    setMessagesLoading(true);
+    try {
+      const list = await fetchMessages(conversation.id);
+      setConversationMessages(list);
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+      setConversationMessages([]);
+    } finally {
+      setMessagesLoading(false);
+    }
+  };
+
+  const handleSendMessage = async (text) => {
+    if (!text?.trim() || !selectedConversation) return;
+    setMessageSendError('');
+    try {
+      await createMessage(selectedConversation.application, text.trim());
+      const [messagesList, conversationsList] = await Promise.all([
+        fetchMessages(selectedConversation.id),
+        fetchConversations(),
+      ]);
+      setConversationMessages(messagesList);
+      setConversations(conversationsList);
+    } catch (error) {
+      setMessageSendError(error.message || 'Failed to send message');
+    }
+  };
+
   const triggerApplicationUpdate = () => {
     const now = Date.now().toString();
     localStorage.setItem('lastApplicationUpdate', now);
@@ -469,6 +600,33 @@ function App() {
     setSelectedApplicationId(null);
     setSelectedApplicationDetail(null);
     setApplicationMessageText('');
+    setEditResumeFile(null);
+    setResumeUpdateStatus('');
+  };
+
+  const submitResumeUpdate = async () => {
+    if (!selectedApplicationDetail || !editResumeFile) {
+      return;
+    }
+    setResumeUpdateLoading(true);
+    setResumeUpdateStatus('');
+    try {
+      const updated = await updateApplicationResume(selectedApplicationDetail.id, { resumeFile: editResumeFile });
+      setSelectedApplicationDetail((prev) => ({ ...prev, ...updated }));
+      setApplications((prev) => prev.map((application) => (
+        application.id === updated.id ? { ...application, ...updated } : application
+      )));
+      setEditResumeFile(null);
+      setResumeUpdateStatus(`✅ Resume updated. AI match rescanned: ${updated.ai_match_score != null ? Math.round(updated.ai_match_score) + '%' : 'N/A'}.`);
+    } catch (error) {
+      if (error.code === 'RESUME_EDIT_LIMIT_REACHED') {
+        setResumeUpdateStatus(`🔒 ${error.message}`);
+      } else {
+        setResumeUpdateStatus(`❌ ${error.message}`);
+      }
+    } finally {
+      setResumeUpdateLoading(false);
+    }
   };
 
   const sendApplicationMessage = async () => {
@@ -517,6 +675,27 @@ function App() {
     } catch (error) {
       setMessage(`❌ ${error.message}`);
       console.error('Rejection error:', error);
+    }
+  };
+
+  const handleAdminUpdateApplicationStatus = async (applicationId, statusValue) => {
+    try {
+      await updateApplication(applicationId, { status: statusValue });
+      await refreshApplications_func();
+      setMessage('✅ Application updated.');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      setMessage(`❌ ${error.message}`);
+    }
+  };
+
+  const handleToggleUserActive = async (userId) => {
+    try {
+      const updated = await toggleUserActive(userId);
+      setAdminUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
+    } catch (error) {
+      setMessage(`❌ ${error.message}`);
+      setTimeout(() => setMessage(''), 3000);
     }
   };
 
@@ -630,6 +809,7 @@ function App() {
             cover_letter: coverLetter,
             skills: applicantSkills.trim(),
             status: 'APPLIED',
+            ...(selectedResumeId ? { resume_id: selectedResumeId } : {}),
           };
 
       if (resumeFile) {
@@ -659,6 +839,7 @@ function App() {
       setApplicantEmail('');
       setResume('');
       setResumeFile(null);
+      setSelectedResumeId('');
       setCoverLetter('');
       setApplicantSkills('');
       setTimeout(() => setMessage(''), 6000);
@@ -856,10 +1037,21 @@ function App() {
     }
   };
 
+  const showLegacyNavbar = userType === 'jobseeker' && !!companyPageCompany;
+
   return (
     <>
       {!isAuthenticated ? (
-        <LampLogin onLoginSuccess={handleLoginSuccess} />
+        showAuth ? (
+          <LampLogin onLoginSuccess={handleLoginSuccess} onBack={() => setShowAuth(false)} />
+        ) : (
+          <HomePage
+            jobs={jobs}
+            onGetStarted={() => setShowAuth(true)}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+          />
+        )
       ) : showProfileLoading ? (
         <div className={`App ${theme}`}>
           <div className="profile-onboarding-screen">
@@ -1015,6 +1207,7 @@ function App() {
       ) : (
         <div className={`App ${theme}`}>
       {/* Navigation */}
+      {showLegacyNavbar && (
       <nav className="navbar">
         <div className="nav-container">
           <div className="logo">
@@ -1085,6 +1278,7 @@ function App() {
           </div>
         </div>
       </nav>
+      )}
 
       {userType === 'jobseeker' ? (
         <>
@@ -1270,22 +1464,42 @@ function App() {
                     </div>
                     <div className="form-group">
                       <label>Resume</label>
-                      <textarea
-                        value={resume}
-                        onChange={(e) => setResume(e.target.value)}
-                        placeholder="Paste your resume text here"
-                        rows="4"
-                      />
-                      <div className="file-upload-row">
-                        <input
-                          type="file"
-                          accept="application/pdf"
-                          onChange={(e) => setResumeFile(e.target.files[0] ?? null)}
-                          className="file-input"
-                        />
-                        <span className="file-hint">Or upload a PDF instead of pasting text.</span>
-                      </div>
-                      {resumeFile && <p className="file-selected">Selected file: {resumeFile.name}</p>}
+                      {resumes.length > 0 && (
+                        <select
+                          className="saved-resume-select"
+                          value={selectedResumeId}
+                          onChange={(e) => { setSelectedResumeId(e.target.value); setResumeFile(null); }}
+                        >
+                          <option value="">Upload new / paste text instead</option>
+                          {resumes.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.label || 'Resume'}{r.is_primary ? ' (Primary)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {selectedResumeId ? (
+                        <p className="file-selected">Using your saved resume. Pick "Upload new" above to use a different one.</p>
+                      ) : (
+                        <>
+                          <textarea
+                            value={resume}
+                            onChange={(e) => setResume(e.target.value)}
+                            placeholder="Paste your resume text here"
+                            rows="4"
+                          />
+                          <div className="file-upload-row">
+                            <input
+                              type="file"
+                              accept="application/pdf"
+                              onChange={(e) => setResumeFile(e.target.files[0] ?? null)}
+                              className="file-input"
+                            />
+                            <span className="file-hint">Or upload a PDF instead of pasting text.</span>
+                          </div>
+                          {resumeFile && <p className="file-selected">Selected file: {resumeFile.name}</p>}
+                        </>
+                      )}
                     </div>
                     <div className="form-group">
                       <label>Cover Letter</label>
@@ -1323,9 +1537,38 @@ function App() {
             currentUser={currentUser}
             applications={applications}
             bookmarks={bookmarks}
+            onBookmarksChange={setBookmarks}
             jobs={filteredJobs}
             onApplyJob={setSelectedJobId}
             onLogout={handleLogout}
+            userProfile={userProfile}
+            profileForm={profileForm}
+            onProfileFieldChange={handleProfileFormChange}
+            onSaveProfile={handleSaveProfile}
+            profileLoading={profileLoading}
+            profileSaveMessage={profileSaveMessage}
+            profileError={profileError}
+            resumes={resumes}
+            onUploadResume={handleUploadResume}
+            onDeleteResume={handleDeleteResume}
+            onSetPrimaryResume={handleSetPrimaryResume}
+            resumeManagerStatus={resumeManagerStatus}
+            profilePhotoUrl={getMediaUrl(userProfile?.profile_photo)}
+            onUploadProfilePhoto={handleUploadProfilePhoto}
+            photoUploadStatus={photoUploadStatus}
+            notifications={notifications}
+            unreadNotificationCount={unreadNotificationCount}
+            onMarkNotificationRead={markNotificationsRead}
+            conversations={conversations}
+            conversationsLoading={conversationsLoading}
+            selectedConversation={selectedConversation}
+            conversationMessages={conversationMessages}
+            messagesLoading={messagesLoading}
+            messageSendError={messageSendError}
+            onSelectConversation={handleSelectConversation}
+            onSendMessage={handleSendMessage}
+            theme={theme}
+            onToggleTheme={toggleTheme}
           />
         )}
         </>
@@ -1333,7 +1576,7 @@ function App() {
         <Routes>
           <Route path="/interview/:roomId" element={<InterviewRoomPage currentUser={currentUser} />} />
           <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} userType={userType} allowedRole="admin" />}>
-            <Route path="/admin/*" element={<AdminLayout currentUser={currentUser} onLogout={handleLogout} />}>
+            <Route path="/admin/*" element={<AdminLayout currentUser={currentUser} onLogout={handleLogout} theme={theme} onToggleTheme={toggleTheme} />}>
               <Route
                 index
                 element={<Navigate to="dashboard" replace />}
@@ -1344,11 +1587,25 @@ function App() {
               />
               <Route
                 path="applications"
-                element={<AdminApplicationsPage applications={applications} loading={adminLoading} onViewApplication={openApplicationDetail} />}
+                element={(
+                  <AdminApplicationsPage
+                    applications={applications}
+                    loading={adminLoading}
+                    onViewApplication={openApplicationDetail}
+                    onUpdateStatus={handleAdminUpdateApplicationStatus}
+                  />
+                )}
               />
               <Route
                 path="users"
-                element={<AdminUsersPage users={adminUsers} loading={adminLoading} />}
+                element={(
+                  <AdminUsersPage
+                    users={adminUsers}
+                    loading={adminLoading}
+                    currentUser={currentUser}
+                    onToggleActive={handleToggleUserActive}
+                  />
+                )}
               />
               <Route
                 path="companies"
@@ -1358,7 +1615,7 @@ function App() {
             </Route>
           </Route>
           <Route element={<ProtectedRoute isAuthenticated={isAuthenticated} userType={userType} allowedRole="recruiter" />}>
-            <Route path="/recruiter/*" element={<RecruiterLayout currentUser={currentUser} onLogout={handleLogout} />}>
+            <Route path="/recruiter/*" element={<RecruiterLayout currentUser={currentUser} onLogout={handleLogout} theme={theme} onToggleTheme={toggleTheme} />}>
               <Route
                 index
                 element={<Navigate to="dashboard" replace />}
@@ -1367,6 +1624,7 @@ function App() {
                 path="dashboard"
                 element={
                   <RecruiterDashboardPage
+                    currentUser={currentUser}
                     jobs={recruiterJobs}
                     applications={recruiterApplications}
                     loading={analyticsLoading}
@@ -1499,10 +1757,12 @@ function App() {
                   <RecruiterMessagesPage
                     conversations={conversations}
                     selectedConversation={selectedConversation}
-                    onSelectConversation={setSelectedConversation}
+                    onSelectConversation={handleSelectConversation}
                     messages={conversationMessages}
-                    onSendMessage={() => {} }
-                    loading={conversations.length === 0 && isAuthenticated}
+                    onSendMessage={handleSendMessage}
+                    loading={conversationsLoading}
+                    messagesLoading={messagesLoading}
+                    sendError={messageSendError}
                     newMessage={newMessage}
                     setNewMessage={setNewMessage}
                   />
@@ -1528,7 +1788,17 @@ function App() {
               />
               <Route
                 path="settings"
-                element={<RecruiterPlaceholderPage title="Settings" description="Recruiter settings are coming soon." actionLabel="Manage settings" onAction={() => {}} />}
+                element={(
+                  <RecruiterSettingsPage
+                    currentUser={currentUser}
+                    profileForm={profileForm}
+                    onProfileFieldChange={handleProfileFormChange}
+                    onSaveProfile={handleSaveProfile}
+                    profileLoading={profileLoading}
+                    profileSaveMessage={profileSaveMessage}
+                    profileError={profileError}
+                  />
+                )}
               />
               <Route path="*" element={<Navigate to="dashboard" replace />} />
             </Route>
@@ -1570,22 +1840,42 @@ function App() {
               </div>
               <div className="form-group">
                 <label>Resume</label>
-                <textarea
-                  value={resume}
-                  onChange={(e) => setResume(e.target.value)}
-                  placeholder="Paste your resume text here"
-                  rows="5"
-                />
-                <div className="file-upload-row">
-                  <input
-                    type="file"
-                    accept="application/pdf"
-                    onChange={(e) => setResumeFile(e.target.files[0] ?? null)}
-                    className="file-input"
-                  />
-                  <span className="file-hint">Or upload a PDF instead of pasting text.</span>
-                </div>
-                {resumeFile && <p className="file-selected">Selected file: {resumeFile.name}</p>}
+                {resumes.length > 0 && (
+                  <select
+                    className="saved-resume-select"
+                    value={selectedResumeId}
+                    onChange={(e) => { setSelectedResumeId(e.target.value); setResumeFile(null); }}
+                  >
+                    <option value="">Upload new / paste text instead</option>
+                    {resumes.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.label || 'Resume'}{r.is_primary ? ' (Primary)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {selectedResumeId ? (
+                  <p className="file-selected">Using your saved resume. Pick "Upload new" above to use a different one.</p>
+                ) : (
+                  <>
+                    <textarea
+                      value={resume}
+                      onChange={(e) => setResume(e.target.value)}
+                      placeholder="Paste your resume text here"
+                      rows="5"
+                    />
+                    <div className="file-upload-row">
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        onChange={(e) => setResumeFile(e.target.files[0] ?? null)}
+                        className="file-input"
+                      />
+                      <span className="file-hint">Or upload a PDF instead of pasting text.</span>
+                    </div>
+                    {resumeFile && <p className="file-selected">Selected file: {resumeFile.name}</p>}
+                  </>
+                )}
               </div>
               <div className="form-group">
                 <label>Cover Letter</label>
@@ -1685,6 +1975,35 @@ function App() {
                     <p>Resume not provided.</p>
                   )}
                 </section>
+
+                {userType === 'jobseeker' && (
+                  <section className="detail-section">
+                    <h3>Update Resume</h3>
+                    <p className="resume-edit-count">
+                      {userProfile?.is_subscribed
+                        ? 'Unlimited resume edits (subscribed).'
+                        : `${selectedApplicationDetail.resume_edit_count ?? 0} / 4 free edits used on this application.`}
+                    </p>
+                    <div className="file-upload-row">
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        onChange={(e) => setEditResumeFile(e.target.files[0] ?? null)}
+                        className="file-input"
+                      />
+                    </div>
+                    {editResumeFile && <p className="file-selected">Selected file: {editResumeFile.name}</p>}
+                    <button
+                      type="button"
+                      className="submit-btn"
+                      disabled={!editResumeFile || resumeUpdateLoading}
+                      onClick={submitResumeUpdate}
+                    >
+                      {resumeUpdateLoading ? 'Uploading...' : 'Upload New Resume'}
+                    </button>
+                    {resumeUpdateStatus && <p className="resume-update-status">{resumeUpdateStatus}</p>}
+                  </section>
+                )}
 
                 <section className="detail-section">
                   <h3>Cover Letter</h3>

@@ -16,3 +16,4 @@ numpy
 openai
 python-docx
 pdfplumber
+Pillow

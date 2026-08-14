@@ -8,8 +8,8 @@ const INITIAL_STATE = {
   mission: '', vision: '', linkedin: '', facebook: '', instagram: '',
 };
 
-const inputClass = 'w-full border border-[#14181C]/15 bg-[#F5F6F3] px-4 py-3 text-sm text-[#14181C] outline-none focus:border-[#0E7C66] disabled:bg-white disabled:text-[#5B6660]';
-const labelClass = 'space-y-2 text-sm text-[#5B6660]';
+const inputClass = 'w-full border border-[#14181C]/15 dark:border-white/15 bg-[#F5F6F3] dark:bg-slate-800 px-4 py-3 text-sm text-[#14181C] dark:text-slate-50 outline-none focus:border-[#0E7C66] disabled:bg-white disabled:text-[#5B6660]';
+const labelClass = 'space-y-2 text-sm text-[#5B6660] dark:text-slate-400';
 
 export default function RecruiterCompanyProfilePage({ companyProfile, loading, onSave }) {
   const [form, setForm] = useState(INITIAL_STATE);
@@ -34,12 +34,12 @@ export default function RecruiterCompanyProfilePage({ companyProfile, loading, o
   };
 
   return (
-    <div className="space-y-6 font-sans text-[#14181C]">
-      <div className="border border-[#14181C]/10 bg-white p-6">
+    <div className="space-y-6 font-sans text-[#14181C] dark:text-slate-50">
+      <div className="border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="font-data text-xs tracking-[0.2em] text-[#0E7C66]">COMPANY PROFILE</p>
-            <h1 className="mt-2 font-display text-xl font-semibold text-[#14181C]">Brand details</h1>
+            <h1 className="mt-2 font-display text-xl font-semibold text-[#14181C] dark:text-slate-50">Brand details</h1>
           </div>
           <button
             type="button"
@@ -60,7 +60,7 @@ export default function RecruiterCompanyProfilePage({ companyProfile, loading, o
         />
       ) : (
         <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-2">
-          <div className="border border-[#14181C]/10 bg-white p-6">
+          <div className="border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-6">
             <div className="grid gap-5">
               <label className={labelClass}>
                 <span>Company logo</span>
@@ -83,7 +83,7 @@ export default function RecruiterCompanyProfilePage({ companyProfile, loading, o
           </div>
 
           <div className="space-y-6">
-            <div className="border border-[#14181C]/10 bg-white p-6">
+            <div className="border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-6">
               <div className="grid gap-5 sm:grid-cols-2">
                 {['Company Size', 'Founded Year', 'Head Office', 'Email', 'Phone', 'Address'].map((label) => {
                   const key = label.toLowerCase().replace(/ /g, '_');
@@ -104,7 +104,7 @@ export default function RecruiterCompanyProfilePage({ companyProfile, loading, o
               </div>
             </div>
 
-            <div className="border border-[#14181C]/10 bg-white p-6">
+            <div className="border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-6">
               <div className="space-y-5">
                 <label className={labelClass}>
                   <span>Description</span>
@@ -121,7 +121,7 @@ export default function RecruiterCompanyProfilePage({ companyProfile, loading, o
               </div>
             </div>
 
-            <div className="border border-[#14181C]/10 bg-white p-6">
+            <div className="border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-6">
               <div className="grid gap-5 sm:grid-cols-3">
                 {['LinkedIn', 'Facebook', 'Instagram'].map((label) => {
                   const key = label.toLowerCase();

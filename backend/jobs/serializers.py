@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Conversation, Job, Application, Message, Company, RecruiterProfile, UserProfile, Bookmark, Interview, Notification
+from .models import Conversation, Job, Application, Message, Company, RecruiterProfile, UserProfile, Bookmark, Interview, Notification, Resume
 from django.contrib.auth.models import User
 from django.db.models import Q
 
@@ -25,6 +25,13 @@ class InterviewSerializer(serializers.ModelSerializer):
             'created_at',
         ]
         read_only_fields = ['recruiter', 'candidate', 'meeting_url', 'room_name', 'created_at']
+
+
+class ResumeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Resume
+        fields = ['id', 'user', 'file', 'label', 'is_primary', 'uploaded_at']
+        read_only_fields = ['user', 'is_primary']
 
 
 class BookmarkSerializer(serializers.ModelSerializer):
@@ -243,6 +250,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'ai_match_score',
             'ai_matched_skills',
             'ai_missing_skills',
+            'resume_edit_count',
             'status',
             'applied_at',
             'viewed_at',
@@ -253,7 +261,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'has_conversation',
             'conversation_id',
         ]
-        read_only_fields = ['job_title', 'job_company', 'applicant', 'message_count', 'unread_message_count', 'has_conversation', 'ai_match_score', 'ai_matched_skills', 'ai_missing_skills']
+        read_only_fields = ['job_title', 'job_company', 'applicant', 'message_count', 'unread_message_count', 'has_conversation', 'ai_match_score', 'ai_matched_skills', 'ai_missing_skills', 'resume_edit_count']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -352,6 +360,9 @@ class LoginSerializer(serializers.Serializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
+    profile_completion_score = serializers.SerializerMethodField()
+    resumes = serializers.SerializerMethodField()
+
     class Meta:
         model = UserProfile
         fields = [
@@ -387,7 +398,34 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'resume_file',
             'email_notifications',
             'profile_completed',
+            'is_subscribed',
+            'profile_completion_score',
+            'resumes',
         ]
+        read_only_fields = ['is_subscribed']
+
+    def get_profile_completion_score(self, obj):
+        checks = [
+            bool(obj.mobile_number),
+            bool(obj.headline),
+            bool(obj.city),
+            bool(obj.country),
+            bool(obj.career_level),
+            obj.total_experience is not None,
+            bool(obj.current_job_title),
+            bool(obj.current_company),
+            bool(obj.expected_salary),
+            bool(obj.preferred_job_type),
+            bool(obj.preferred_work_mode),
+            bool(obj.skills),
+            bool(obj.education),
+            bool(obj.work_experience),
+            obj.user.resumes.exists() or bool(obj.resume_file),
+        ]
+        return round(100 * sum(checks) / len(checks))
+
+    def get_resumes(self, obj):
+        return ResumeSerializer(obj.user.resumes.all(), many=True, context=self.context).data
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -404,7 +442,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'company_name', 'profile']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'company_name', 'profile', 'is_active', 'date_joined']
 
     def get_company_name(self, obj):
         profile = getattr(obj, 'recruiter_profile', None)

@@ -6,6 +6,7 @@ from .views import (
     ApplicationViewSet,
     MessageViewSet,
     BookmarkViewSet,
+    ResumeViewSet,
     InterviewViewSet,
     NotificationViewSet,
     UserViewSet,
@@ -26,6 +27,7 @@ router.register(r'applications', ApplicationViewSet, basename='application')
 router.register(r'conversations', ConversationViewSet, basename='conversation')
 router.register(r'messages', MessageViewSet, basename='message')
 router.register(r'bookmarks', BookmarkViewSet, basename='bookmark')
+router.register(r'resumes', ResumeViewSet, basename='resume')
 router.register(r'interviews', InterviewViewSet, basename='interview')
 router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'users', UserViewSet, basename='user')

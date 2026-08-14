@@ -7,6 +7,7 @@
   --ll-accent1: #7c3aed;
   --ll-accent2: #4f46e5;
 
+  position: relative;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -22,6 +23,34 @@
 .ll-page *::before,
 .ll-page *::after {
   box-sizing: border-box;
+}
+
+.ll-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+
+.ll-brand img {
+  width: 108px;
+  height: 108px;
+  border-radius: 22px;
+  background: #ffffff;
+  padding: 10px;
+  object-fit: contain;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+.ll-brand-sm {
+  margin-bottom: 8px;
+}
+
+.ll-brand-sm img {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  padding: 6px;
 }
 
 .ll-hint {

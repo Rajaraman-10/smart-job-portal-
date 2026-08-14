@@ -261,6 +261,27 @@ export async function fetchUsers() {
   return response.json();
 }
 
+export async function toggleUserActive(userId) {
+  const response = await fetch(`${API_BASE_URL}/users/${userId}/toggle-active/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to update user status';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || errorMsg;
+    } catch (e) {
+      // ignore parse failure
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
 export async function fetchCompanies() {
   const response = await fetch(`${API_BASE_URL}/companies/`, {
     headers: {
@@ -356,6 +377,32 @@ export async function createApplication(application) {
       errorMsg = `HTTP ${response.status}: ${response.statusText}`;
     }
     throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
+export async function fetchConversations() {
+  const response = await fetch(`${API_BASE_URL}/conversations/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load conversations');
+  }
+  return response.json();
+}
+
+export async function fetchMessages(conversationId) {
+  const response = await fetch(`${API_BASE_URL}/messages/?conversation=${conversationId}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load messages');
   }
   return response.json();
 }
@@ -470,6 +517,32 @@ export async function updateApplication(applicationId, data) {
   return response.json();
 }
 
+export async function updateApplicationResume(applicationId, { resumeFile, resumeText } = {}) {
+  const formData = new FormData();
+  if (resumeFile) {
+    formData.append('resume_file', resumeFile);
+  }
+  if (resumeText !== undefined && resumeText !== null) {
+    formData.append('resume', resumeText);
+  }
+  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/`, {
+    method: 'PATCH',
+    headers: {
+      ...authHeaders(),
+    },
+    body: formData,
+  });
+  const responseData = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(responseData.detail || 'Failed to update resume');
+    error.code = responseData.code;
+    error.resumeEditCount = responseData.resume_edit_count;
+    error.freeLimit = responseData.free_limit;
+    throw error;
+  }
+  return responseData;
+}
+
 export async function deleteJob(jobId) {
   const response = await fetch(`${API_BASE_URL}/jobs/${jobId}/`, {
     method: 'DELETE',
@@ -545,6 +618,110 @@ export async function removeBookmark(bookmarkId) {
     throw new Error(errorMsg);
   }
   return true;
+}
+
+export async function fetchResumes() {
+  const response = await fetch(`${API_BASE_URL}/resumes/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load resumes');
+  }
+  return response.json();
+}
+
+export async function uploadProfilePhoto(file) {
+  const formData = new FormData();
+  formData.append('profile_photo', file);
+  const response = await fetch(`${API_BASE_URL}/auth/profile/`, {
+    method: 'PATCH',
+    headers: {
+      ...authHeaders(),
+    },
+    body: formData,
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to upload photo';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || errorData.error || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
+export async function uploadResume(file, label) {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (label) {
+    formData.append('label', label);
+  }
+  const response = await fetch(`${API_BASE_URL}/resumes/`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(),
+    },
+    body: formData,
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to upload resume';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
+export async function deleteResume(resumeId) {
+  const response = await fetch(`${API_BASE_URL}/resumes/${resumeId}/`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to delete resume';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return true;
+}
+
+export async function setPrimaryResume(resumeId) {
+  const response = await fetch(`${API_BASE_URL}/resumes/${resumeId}/set_primary/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    let errorMsg = 'Failed to set primary resume';
+    try {
+      const errorData = await response.json();
+      errorMsg = errorData.detail || JSON.stringify(errorData);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
 }
 
 export async function scheduleInterview(payload) {
