@@ -1671,13 +1671,13 @@
 /* ===== Dark mode ===== */
 
 .App.dark .dashboard-root {
-  background: #0b1120;
+  background: #000000;
   color: #e5e7eb;
 }
 
 .App.dark .topbar,
 .App.dark .dashboard-sidebar {
-  background: #0f172a;
+  background: #050505;
   border-color: rgba(148, 163, 184, 0.14);
 }
 
@@ -1725,8 +1725,8 @@
 
 .App.dark .dashboard-menu-item.active,
 .App.dark .dashboard-submenu-item.active {
-  background: rgba(37, 99, 235, 0.18);
-  color: #93c5fd;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
 }
 
 .App.dark .dashboard-logout-btn {
@@ -1745,7 +1745,7 @@
 .App.dark .dashboard-kpi-card,
 .App.dark .dash-job-row,
 .App.dark .empty-state {
-  background: #111827;
+  background: #080808;
   border-color: rgba(148, 163, 184, 0.16);
   color: #e5e7eb;
 }
@@ -1786,7 +1786,7 @@
 }
 
 .App.dark .dashboard-score-bar {
-  background: #1f2937;
+  background: #1a1a1a;
 }
 
 .App.dark .dashboard-table td {
@@ -1804,8 +1804,8 @@
 
 .App.dark .dashboard-job-card-tag,
 .App.dark .recommended-job-tag {
-  background: rgba(59, 130, 246, 0.15);
-  color: #bfdbfe;
+  background: rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
 }
 
 .App.dark .recommended-job-match {
@@ -1814,19 +1814,19 @@
 }
 
 .App.dark .dashboard-category-select {
-  background: #111827;
+  background: #080808;
   border-color: rgba(148, 163, 184, 0.16);
   color: #e5e7eb;
 }
 
 .App.dark .dash-outline-btn {
-  background: rgba(37, 99, 235, 0.12);
-  border-color: rgba(99, 102, 241, 0.35);
-  color: #93c5fd;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #e2e8f0;
 }
 
 .App.dark .dash-outline-btn:hover {
-  background: rgba(37, 99, 235, 0.2);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .App.dark .dash-completion-hint,
@@ -1835,13 +1835,13 @@
 }
 
 .App.dark .completion-donut-inner {
-  background: #111827;
+  background: #080808;
   color: #f1f5f9;
 }
 
 .App.dark .dash-boost-card {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14) 0%, rgba(139, 92, 246, 0.1) 100%);
-  border-color: rgba(99, 102, 241, 0.25);
+  background: #080808;
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .App.dark .dash-boost-icon {
@@ -1876,7 +1876,7 @@
 }
 
 .App.dark .messages-bubble {
-  background: #1f2937;
+  background: #121212;
   color: #e5e7eb;
 }
 
@@ -1885,13 +1885,13 @@
 .App.dark .profile-inline-form textarea,
 .App.dark .form-group input,
 .App.dark .form-group select {
-  background: #111827;
+  background: #080808;
   border-color: rgba(148, 163, 184, 0.16);
   color: #e5e7eb;
 }
 
 .App.dark .profile-avatar-upload-btn {
-  border-color: #111827;
+  border-color: #080808;
 }
 
 .App.dark .dashboard-notification-card.unread {
@@ -1904,7 +1904,7 @@
 }
 
 .App.dark .settings-toggle-row {
-  background: #111827;
+  background: #080808;
   border-color: rgba(148, 163, 184, 0.16);
 }
 
