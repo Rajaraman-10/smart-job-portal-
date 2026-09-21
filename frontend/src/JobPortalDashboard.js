@@ -23,6 +23,7 @@ import {
   UploadCloud,
   Sparkles,
   ArrowRight,
+  ShieldCheck,
   Camera,
 } from "lucide-react";
 import BookmarkButton from "./BookmarkButton";
@@ -166,6 +167,10 @@ export default function JobPortalDashboard({
 }) {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [workModeFilter, setWorkModeFilter] = useState("All");
+  const [experienceFilter, setExperienceFilter] = useState("All");
+  const [minSalaryFilter, setMinSalaryFilter] = useState("");
+  const [postedWithinFilter, setPostedWithinFilter] = useState("Any");
   const [openSection, setOpenSection] = useState("Search Jobs");
   const [activeMenu, setActiveMenu] = useState("Dashboard");
   const [editingAbout, setEditingAbout] = useState(false);
@@ -210,8 +215,41 @@ export default function JobPortalDashboard({
           job.location?.toLowerCase().includes(search.toLowerCase())
         )
         .filter((job) => categoryFilter === "All" || job.category === categoryFilter)
+        .filter((job) => workModeFilter === "All" || job.work_mode === workModeFilter)
+        .filter((job) => experienceFilter === "All" || job.experience_level === experienceFilter)
+        .filter((job) => {
+          if (!minSalaryFilter) return true;
+          const min = Number(minSalaryFilter);
+          if (!min) return true;
+          return job.salary_max != null && job.salary_max >= min;
+        })
+        .filter((job) => {
+          if (postedWithinFilter === "Any") return true;
+          if (!job.posted_at) return true;
+          const days = Number(postedWithinFilter);
+          const cutoff = new Date();
+          cutoff.setDate(cutoff.getDate() - days);
+          return new Date(job.posted_at) >= cutoff;
+        })
         .slice(0, 6)
     : FEATURED_JOBS_DEFAULT;
+
+  const activeFilterCount = [
+    categoryFilter !== "All",
+    workModeFilter !== "All",
+    experienceFilter !== "All",
+    Boolean(minSalaryFilter),
+    postedWithinFilter !== "Any",
+  ].filter(Boolean).length;
+
+  const clearAllFilters = () => {
+    setSearch("");
+    setCategoryFilter("All");
+    setWorkModeFilter("All");
+    setExperienceFilter("All");
+    setMinSalaryFilter("");
+    setPostedWithinFilter("Any");
+  };
 
   const getJobSkillList = (job) => {
     const fromRequired = (job.required_skills || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -236,9 +274,10 @@ export default function JobPortalDashboard({
         salary: job.salary || "Not listed",
         category: job.category || "",
         logo: job.company_meta?.logo || "",
+        isVerified: Boolean(job.company_meta?.is_verified),
         tags: getJobSkillList(job),
         match: computeSkillMatch(job),
-        age: job.created_at ? formatRelativeDate(job.created_at) : "1 day ago",
+        age: job.posted_at ? formatRelativeDate(job.posted_at) : "1 day ago",
       }))
     : FEATURED_JOBS_DEFAULT;
 
@@ -318,12 +357,51 @@ export default function JobPortalDashboard({
                 <option key={category} value={category}>{category === "All" ? "All categories" : category}</option>
               ))}
             </select>
+            <select
+              className="dashboard-category-select"
+              value={workModeFilter}
+              onChange={(e) => setWorkModeFilter(e.target.value)}
+            >
+              <option value="All">Any work mode</option>
+              <option value="Remote">Remote</option>
+              <option value="Hybrid">Hybrid</option>
+              <option value="On-site">On-site</option>
+            </select>
+            <select
+              className="dashboard-category-select"
+              value={experienceFilter}
+              onChange={(e) => setExperienceFilter(e.target.value)}
+            >
+              <option value="All">Any experience</option>
+              <option value="Entry">Entry Level</option>
+              <option value="Mid">Mid Level</option>
+              <option value="Senior">Senior Level</option>
+              <option value="Lead">Lead / Manager</option>
+            </select>
+            <select
+              className="dashboard-category-select"
+              value={postedWithinFilter}
+              onChange={(e) => setPostedWithinFilter(e.target.value)}
+            >
+              <option value="Any">Any time</option>
+              <option value="1">Past 24 hours</option>
+              <option value="7">Past week</option>
+              <option value="30">Past month</option>
+            </select>
+            <input
+              type="number"
+              min="0"
+              className="dashboard-category-select dashboard-salary-input"
+              placeholder="Min salary"
+              value={minSalaryFilter}
+              onChange={(e) => setMinSalaryFilter(e.target.value)}
+            />
             <button
               className="dashboard-cta-btn"
               type="button"
-              onClick={() => { setSearch(""); setCategoryFilter("All"); }}
+              onClick={clearAllFilters}
             >
-              Clear search
+              Clear filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
             </button>
           </div>
         )}
@@ -346,10 +424,17 @@ export default function JobPortalDashboard({
                     <div>
                       <div className="dashboard-job-card-topline">
                         <span className="dashboard-job-card-badge">Featured</span>
-                        <span className="dashboard-job-card-age">{job.age}</span>
+                        <span className="dashboard-job-card-age">{job.posted_at ? formatRelativeDate(job.posted_at) : job.age}</span>
                       </div>
                       <h3>{job.title || job.position}</h3>
-                      <p>{job.company}</p>
+                      <p>
+                        {job.company}
+                        {job.company_meta?.is_verified && (
+                          <span className="verified-badge" title="Verified by Smart Job Portal">
+                            <ShieldCheck size={12} /> Verified
+                          </span>
+                        )}
+                      </p>
                       <p className="dashboard-job-meta">{job.location} • {job.salary}</p>
                       {job.tags?.length > 0 && (
                         <div className="dashboard-job-card-tag-row">
@@ -360,8 +445,13 @@ export default function JobPortalDashboard({
                       )}
                     </div>
                     <div className="dashboard-job-card-footer">
-                      <button className="dashboard-action-btn" type="button" onClick={() => onApplyJob?.(job.id)}>
-                        Apply Now
+                      <button
+                        className="dashboard-action-btn"
+                        type="button"
+                        onClick={() => onApplyJob?.(job.id)}
+                        disabled={job.id == null}
+                      >
+                        {job.id == null ? "Unavailable" : "Apply Now"}
                       </button>
                     </div>
                   </div>
@@ -1004,7 +1094,14 @@ export default function JobPortalDashboard({
                 </div>
                 <div className="dash-job-row-main">
                   <div className="dash-job-row-title">{job.position}</div>
-                  <div className="dash-job-row-company">{job.company}</div>
+                  <div className="dash-job-row-company">
+                    {job.company}
+                    {job.isVerified && (
+                      <span className="verified-badge" title="Verified by Smart Job Portal">
+                        <ShieldCheck size={12} /> Verified
+                      </span>
+                    )}
+                  </div>
                   <div className="dash-job-row-meta">
                     <span><MapPin size={12} /> {job.location}</span>
                   </div>

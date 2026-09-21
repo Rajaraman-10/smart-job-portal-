@@ -112,6 +112,99 @@
   background: #1d4ed8;
 }
 
+.application-page {
+  min-height: calc(100vh - 32px);
+  display: flex;
+  justify-content: center;
+  padding: 32px 20px 48px;
+  background: #f5f7fb;
+}
+
+.application-page-card {
+  width: min(760px, 100%);
+  height: fit-content;
+  padding: clamp(22px, 4vw, 42px);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+}
+
+.application-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.application-page-header h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+}
+
+.application-page-header p {
+  margin: 8px 0 0;
+  color: #64748b;
+}
+
+.application-page-eyebrow {
+  color: #2563eb !important;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.application-page-form {
+  display: grid;
+  gap: 18px;
+}
+
+.application-page-form .form-group {
+  gap: 8px;
+}
+
+.application-page-form input,
+.application-page-form select,
+.application-page-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.application-page-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+@media (max-width: 575.98px) {
+  .application-page {
+    min-height: 100vh;
+    padding: 16px 12px 28px;
+  }
+
+  .application-page-card {
+    border-radius: 12px;
+    padding: 20px 16px;
+  }
+
+  .application-page-header {
+    gap: 12px;
+    margin-bottom: 22px;
+  }
+
+  .application-page-footer {
+    flex-direction: column-reverse;
+  }
+
+  .application-page-footer button {
+    width: 100%;
+  }
+}
+
 .App.dark .logout-btn,
 .App.dark .theme-toggle-btn,
 .App.dark .page-btn {
@@ -2331,6 +2424,74 @@
   color: #111827;
 }
 
+.company-verification-card {
+  margin-top: 20px;
+}
+
+.company-verification-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.company-verification-header h3 {
+  margin: 0 0 4px;
+}
+
+.company-verification-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.88rem;
+  max-width: 520px;
+}
+
+.company-verification-score {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.company-verification-score strong {
+  display: block;
+  font-size: 1.6rem;
+  color: #111827;
+}
+
+.company-verification-score span {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.company-verification-score-bar {
+  margin-top: 16px;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.company-verification-score-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #7c3aed);
+}
+
+.company-verification-disclaimer {
+  margin: 10px 0 0;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.App.dark .company-verification-score strong {
+  color: #f1f5f9;
+}
+
+.App.dark .company-verification-score-bar {
+  background: #1f2937;
+}
+
 .company-jobs-section {
   display: grid;
   gap: 18px;
@@ -2885,6 +3046,13 @@
   border: 1px solid rgba(15, 23, 42, 0.08);
 }
 
+.modal-overlay > .modal {
+  display: block;
+  position: relative;
+  inset: auto;
+  margin: 0;
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -3437,9 +3605,48 @@
   color: #e5e7eb !important;
 }
 
-.App.dark .form-group input,
-.App.dark .form-group select {
+.App.dark .modal {
+  background: #111827 !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+.App.dark .modal-overlay .close-btn,
+.App.dark .modal-header .close-btn {
   color: #e5e7eb !important;
+}
+
+.App.dark .cancel-btn {
+  background: #1e293b !important;
+  color: #e5e7eb !important;
+  border-color: rgba(148, 163, 184, 0.25) !important;
+}
+
+.App.dark .cancel-btn:hover {
+  background: #263449 !important;
+}
+
+.App.dark .file-input {
+  background: #1e293b !important;
+  color: #e5e7eb !important;
+  border-color: rgba(148, 163, 184, 0.25) !important;
+}
+
+.App.dark .file-selected {
+  color: #93c5fd !important;
+}
+
+.App.dark .form-group input,
+.App.dark .form-group select,
+.App.dark .form-group textarea,
+.App.dark .saved-resume-select {
+  background: #1e293b !important;
+  color: #e5e7eb !important;
+  border-color: rgba(148, 163, 184, 0.25) !important;
+}
+
+.App.dark .form-group input::placeholder,
+.App.dark .form-group textarea::placeholder {
+  color: #64748b !important;
 }
 
 .App.dark .muted-text {
@@ -3465,10 +3672,6 @@
 
 .App.dark .form-hint {
   color: #94a3b8 !important;
-}
-
-.App.dark .saved-resume-select {
-  color: #e5e7eb !important;
 }
 
 .App.dark .logo-icon {
@@ -3606,6 +3809,11 @@
 }
 
 .App.dark .company-application-panel-header p {
+  color: #94a3b8 !important;
+}
+
+.App.dark .company-verification-header p,
+.App.dark .company-verification-disclaimer {
   color: #94a3b8 !important;
 }
 

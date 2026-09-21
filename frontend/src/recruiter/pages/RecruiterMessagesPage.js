@@ -1,9 +1,27 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import EmptyState from '../../components/ui/EmptyState';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 
+function formatMessageTime(dateString) {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '';
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60000);
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' · ' + date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
 export default function RecruiterMessagesPage({ conversations, selectedConversation, onSelectConversation, messages, onSendMessage, loading, messagesLoading, sendError }) {
   const [localText, setLocalText] = useState('');
+  const messagesEndRef = useRef(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages, selectedConversation]);
 
   if (loading) {
     return <LoadingSpinner label="Loading messages..." />;
@@ -20,7 +38,7 @@ export default function RecruiterMessagesPage({ conversations, selectedConversat
 
   return (
     <div className="grid gap-6 font-sans text-[#14181C] dark:text-slate-50 lg:grid-cols-[320px_1fr]">
-      <div className="border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-4">
+      <div className="rounded-2xl border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-4 shadow-sm">
         <p className="mb-4 px-2 font-data text-xs tracking-[0.2em] text-[#0E7C66]">CANDIDATES</p>
         <div className="space-y-1">
           {conversations.map((conversation) => (
@@ -28,14 +46,14 @@ export default function RecruiterMessagesPage({ conversations, selectedConversat
               key={conversation.id}
               type="button"
               onClick={() => onSelectConversation(conversation)}
-              className={`w-full px-4 py-3 text-left transition ${
-                selectedConversation?.id === conversation.id ? 'bg-[#14181C] text-white' : 'text-[#14181C] dark:text-slate-50 hover:bg-[#F5F6F3]'
+              className={`w-full rounded-xl px-4 py-3 text-left transition ${
+                selectedConversation?.id === conversation.id ? 'bg-[#14181C] text-white' : 'text-[#14181C] dark:text-slate-50 hover:bg-[#F5F6F3] dark:hover:bg-slate-800'
               }`}
             >
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-medium">{conversation.applicant_name || 'Candidate'}</span>
                 {conversation.unread_messages > 0 && (
-                  <span className="bg-[#B3402F] px-1.5 py-0.5 font-data text-[10px] font-semibold text-white">{conversation.unread_messages}</span>
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#B3402F] px-1.5 font-data text-[10px] font-semibold text-white">{conversation.unread_messages}</span>
                 )}
               </div>
               <p className={`mt-1 text-sm ${selectedConversation?.id === conversation.id ? 'text-white/60' : 'text-[#5B6660] dark:text-slate-400'}`}>
@@ -46,7 +64,7 @@ export default function RecruiterMessagesPage({ conversations, selectedConversat
         </div>
       </div>
 
-      <div className="border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-4">
+      <div className="flex min-h-[520px] flex-col rounded-2xl border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-4 shadow-sm">
         {selectedConversation ? (
           <div className="flex h-full flex-col gap-4">
             <div className="flex items-center justify-between border-b border-[#14181C]/10 dark:border-white/10 pb-4">
@@ -62,25 +80,29 @@ export default function RecruiterMessagesPage({ conversations, selectedConversat
               ) : messages.length === 0 ? (
                 <p className="text-sm text-[#5B6660] dark:text-slate-400">Start the conversation with a candidate.</p>
               ) : (
-                messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`max-w-[75%] p-4 ${
-                      message.sender === selectedConversation.recruiter ? 'ml-auto bg-[#14181C] text-white' : 'bg-[#F5F6F3] dark:bg-slate-800 text-[#14181C] dark:text-slate-50'
-                    }`}
-                  >
-                    <p className="text-sm leading-6">{message.content}</p>
-                    <p className={`mt-2 font-data text-[11px] ${message.sender === selectedConversation.recruiter ? 'text-white/50' : 'text-[#5B6660] dark:text-slate-400'}`}>
-                      {new Date(message.created_at).toLocaleString()}
-                    </p>
-                  </div>
-                ))
+                <>
+                  {messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`max-w-[75%] rounded-2xl p-4 ${
+                        message.sender === selectedConversation.recruiter ? 'ml-auto bg-[#14181C] text-white' : 'bg-[#F5F6F3] dark:bg-slate-800 text-[#14181C] dark:text-slate-50'
+                      }`}
+                    >
+                      <p className="text-sm leading-6">{message.content}</p>
+                      <p className={`mt-2 font-data text-[11px] ${message.sender === selectedConversation.recruiter ? 'text-white/50' : 'text-[#5B6660] dark:text-slate-400'}`}>
+                        {formatMessageTime(message.created_at)}
+                      </p>
+                    </div>
+                  ))}
+                  <div ref={messagesEndRef} />
+                </>
               )}
             </div>
 
             <form
               onSubmit={(e) => {
                 e.preventDefault();
+                if (!localText.trim()) return;
                 onSendMessage(localText);
                 setLocalText('');
               }}
@@ -90,17 +112,17 @@ export default function RecruiterMessagesPage({ conversations, selectedConversat
                 value={localText}
                 onChange={(e) => setLocalText(e.target.value)}
                 rows={3}
-                className="w-full border border-[#14181C]/15 dark:border-white/15 bg-[#F5F6F3] dark:bg-slate-800 px-4 py-3 text-sm text-[#14181C] dark:text-slate-50 outline-none focus:border-[#0E7C66]"
+                className="w-full rounded-xl border border-[#14181C]/15 dark:border-white/15 bg-[#F5F6F3] dark:bg-slate-800 px-4 py-3 text-sm text-[#14181C] dark:text-slate-50 outline-none focus:border-[#0E7C66] focus:ring-2 focus:ring-[#0E7C66]/10"
                 placeholder="Write a message"
               />
-              <button type="submit" className="inline-flex items-center bg-[#0E7C66] px-5 py-3 text-sm font-medium text-white hover:bg-[#0B6553]">
+              <button type="submit" className="inline-flex items-center rounded-full bg-[#0E7C66] px-5 py-3 text-sm font-medium text-white transition hover:bg-[#0B6553]">
                 Send message
               </button>
               {sendError && <p className="text-sm text-[#B3402F]">{sendError}</p>}
             </form>
           </div>
         ) : (
-          <div className="px-4 py-8 text-center text-[#5B6660] dark:text-slate-400">
+          <div className="flex flex-1 items-center justify-center px-4 py-8 text-center text-[#5B6660] dark:text-slate-400">
             <p className="text-sm">Select a conversation to view messages.</p>
           </div>
         )}

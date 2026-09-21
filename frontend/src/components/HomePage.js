@@ -49,12 +49,12 @@ export default function HomePage({ jobs = [], onGetStarted, theme = 'light', onT
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-500 text-lg font-bold text-white">
               V
             </div>
-            <span className="text-lg font-bold tracking-tight">VIPSeekers</span>
+            <span className="text-lg font-bold tracking-tight">Vipseekers</span>
           </div>
 
           <nav className="hidden items-center gap-8 text-sm font-medium text-slate-600 dark:text-slate-300 md:flex">
             <a href="#jobs" className="hover:text-slate-950 dark:hover:text-white">Find Jobs</a>
-            <a href="#features" className="hover:text-slate-950 dark:hover:text-white">Why VIPSeekers</a>
+            <a href="#features" className="hover:text-slate-950 dark:hover:text-white">Why Vipseekers</a>
             <button type="button" onClick={onGetStarted} className="hover:text-slate-950 dark:hover:text-white">
               For Employers
             </button>
@@ -273,7 +273,7 @@ export default function HomePage({ jobs = [], onGetStarted, theme = 'light', onT
 
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-slate-800 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-        <p>&copy; {new Date().getFullYear()} VIPSeekers Smart Job Portal. All rights reserved.</p>
+        <p>&copy; {new Date().getFullYear()} Vipseekers Smart Job Portal. All rights reserved.</p>
       </footer>
     </div>
   );

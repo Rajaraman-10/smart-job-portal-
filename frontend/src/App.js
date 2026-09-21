@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, updateApplicationResume, createJob, updateJob, createMessage, deleteJob, fetchBookmarks, fetchResumes, uploadResume, deleteResume, setPrimaryResume, uploadProfilePhoto, fetchNotifications, fetchUserProfile, updateUserProfile, markNotificationRead, fetchConversations, fetchMessages, fetchInterviews, fetchAnalytics, fetchAdminDashboard, fetchUsers, fetchCompanies, toggleUserActive } from './services/api';
+import { API_BASE_URL, fetchJobs, fetchApplications, fetchApplicationsGroupedByJob, fetchApplicationDetail, createApplication, updateApplication, updateApplicationResume, createJob, updateJob, createMessage, deleteJob, fetchBookmarks, fetchResumes, uploadResume, deleteResume, setPrimaryResume, uploadProfilePhoto, fetchNotifications, fetchUserProfile, updateUserProfile, markNotificationRead, fetchConversations, fetchMessages, fetchInterviews, fetchAnalytics, fetchAdminDashboard, fetchUsers, fetchCompanies, toggleUserActive, updateCompany, uploadCompanyLogo, submitCompanyVerification, fetchRecruiterProfile, updateRecruiterProfile, verifyRecruiterEmailOtp, requestOtp, fetchAuditLog, uploadJobQuizPdf, updateJobQuizQuestions, previewJobQuizPdf } from './services/api';
 import LampLogin from './components/LampLogin';
 import HomePage from './components/HomePage';
 import BookmarkButton from './BookmarkButton';
 import { InterviewScheduler, InterviewSummary } from './InterviewPanel';
 import InterviewRoomPage from './InterviewRoomPage';
+import QuizAccessPage from './QuizAccessPage';
+import { CandidateWorkflowPanel, RecruiterWorkflowPanel } from './ApplicationWorkflowPanel';
 import JobPortalDashboard from './JobPortalDashboard';
+import ApplicationPage from './components/ApplicationPage';
 import RecruiterLayout from './recruiter/pages/RecruiterLayout';
 import RecruiterDashboardPage from './recruiter/pages/RecruiterDashboardPage';
 import RecruiterPostJobPage from './recruiter/pages/RecruiterPostJobPage';
@@ -17,15 +20,30 @@ import RecruiterMessagesPage from './recruiter/pages/RecruiterMessagesPage';
 import RecruiterAnalyticsPage from './recruiter/pages/RecruiterAnalyticsPage';
 import RecruiterCompanyProfilePage from './recruiter/pages/RecruiterCompanyProfilePage';
 import RecruiterPlaceholderPage from './recruiter/pages/RecruiterPlaceholderPage';
+import RecruiterSubscriptionPage from './recruiter/pages/RecruiterSubscriptionPage';
 import RecruiterSettingsPage from './recruiter/pages/RecruiterSettingsPage';
 import AdminLayout from './admin/pages/AdminLayout';
 import AdminDashboardPage from './admin/pages/AdminDashboardPage';
 import AdminApplicationsPage from './admin/pages/AdminApplicationsPage';
 import AdminUsersPage from './admin/pages/AdminUsersPage';
 import AdminCompaniesPage from './admin/pages/AdminCompaniesPage';
+import AdminJobsPage from './admin/pages/AdminJobsPage';
+import AdminAuditLogPage from './admin/pages/AdminAuditLogPage';
 import ProtectedRoute from './components/ui/ProtectedRoute';
 import './App.css';
 import './JobPortalDashboard.css';
+
+const dateTimeLocalToUtc = (value) => {
+  if (!value) return null;
+  return new Date(value).toISOString();
+};
+
+const utcToDateTimeLocal = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
 
 function App() {
   // Helper function to construct resume URL
@@ -103,7 +121,12 @@ function App() {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messageSendError, setMessageSendError] = useState('');
   const [interviews, setInterviews] = useState([]);
-  const [recruiterCompanyProfile, setRecruiterCompanyProfile] = useState(null);
+  const [interviewsLoading, setInterviewsLoading] = useState(false);
+  const [interviewsError, setInterviewsError] = useState('');
+  const [recruiterProfile, setRecruiterProfile] = useState(null);
+  const [recruiterProfileLoading, setRecruiterProfileLoading] = useState(false);
+  const [companyProfileSaveStatus, setCompanyProfileSaveStatus] = useState('');
+  const [verifyEmailStatus, setVerifyEmailStatus] = useState('');
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [jobTitle, setJobTitle] = useState('');
   const [jobDescription, setJobDescription] = useState('');
@@ -112,14 +135,24 @@ function App() {
   const [jobSalary, setJobSalary] = useState('');
   const [jobCategory, setJobCategory] = useState('General');
   const [jobRequiredSkills, setJobRequiredSkills] = useState('');
-  const [companyLogo, setCompanyLogo] = useState('');
-  const [companyCoverImage, setCompanyCoverImage] = useState('');
-  const [companyWebsite, setCompanyWebsite] = useState('');
-  const [companyIndustry, setCompanyIndustry] = useState('');
-  const [companySize, setCompanySize] = useState('');
-  const [companyRating, setCompanyRating] = useState('');
-  const [companyEmployees, setCompanyEmployees] = useState('');
-  const [companyDescription, setCompanyDescription] = useState('');
+  const [jobSalaryMin, setJobSalaryMin] = useState('');
+  const [jobSalaryMax, setJobSalaryMax] = useState('');
+  const [jobExperienceLevel, setJobExperienceLevel] = useState('');
+  const [jobWorkMode, setJobWorkMode] = useState('');
+  const [jobScreeningThreshold, setJobScreeningThreshold] = useState('50');
+  const [jobResumeScreeningAt, setJobResumeScreeningAt] = useState('');
+  const [jobQuizStartsAt, setJobQuizStartsAt] = useState('');
+  const [jobQuizEndsAt, setJobQuizEndsAt] = useState('');
+  const [jobQuizDurationMinutes, setJobQuizDurationMinutes] = useState('60');
+  const [jobQuizInstructions, setJobQuizInstructions] = useState('');
+  const [jobTechnicalInterviewAt, setJobTechnicalInterviewAt] = useState('');
+  const [jobTechnicalInterviewMode, setJobTechnicalInterviewMode] = useState('Video');
+  const [jobTechnicalInterviewLink, setJobTechnicalInterviewLink] = useState('');
+  const [jobTechnicalInterviewInstructions, setJobTechnicalInterviewInstructions] = useState('');
+  const [jobFinalSelectionAt, setJobFinalSelectionAt] = useState('');
+  const [jobQuizPdf, setJobQuizPdf] = useState(null);
+  const [jobQuizQuestions, setJobQuizQuestions] = useState([]);
+  const [jobQuizStatus, setJobQuizStatus] = useState('');
   const [editingJobId, setEditingJobId] = useState(null);
   const [companyPageCompany, setCompanyPageCompany] = useState(null);
   const [applications, setApplications] = useState([]);
@@ -135,6 +168,7 @@ function App() {
   const [adminDashboard, setAdminDashboard] = useState(null);
   const [adminUsers, setAdminUsers] = useState([]);
   const [adminCompanies, setAdminCompanies] = useState([]);
+  const [auditLog, setAuditLog] = useState([]);
   const [adminLoading, setAdminLoading] = useState(false);
   const [showSavedOnly, setShowSavedOnly] = useState(false);
 
@@ -246,12 +280,13 @@ function App() {
 
     let active = true;
     setAdminLoading(true);
-    Promise.all([fetchAdminDashboard(), fetchUsers(), fetchCompanies()])
-      .then(([dashboardData, usersData, companiesData]) => {
+    Promise.all([fetchAdminDashboard(), fetchUsers(), fetchCompanies(), fetchAuditLog()])
+      .then(([dashboardData, usersData, companiesData, auditLogData]) => {
         if (!active) return;
         setAdminDashboard(dashboardData);
         setAdminUsers(usersData);
         setAdminCompanies(companiesData);
+        setAuditLog(auditLogData);
       })
       .catch(console.error)
       .finally(() => {
@@ -349,6 +384,104 @@ function App() {
     };
   }, [isAuthenticated, userType]);
 
+  const loadRecruiterProfile = () => {
+    setRecruiterProfileLoading(true);
+    return fetchRecruiterProfile()
+      .then(setRecruiterProfile)
+      .catch(console.error)
+      .finally(() => setRecruiterProfileLoading(false));
+  };
+
+  useEffect(() => {
+    if (!isAuthenticated || userType !== 'recruiter') {
+      return;
+    }
+    loadRecruiterProfile();
+  }, [isAuthenticated, userType]);
+
+  const handleSaveCompanyProfile = async (payload) => {
+    if (!recruiterProfile?.company?.id) return;
+    setCompanyProfileSaveStatus('');
+    try {
+      const updatedCompany = await updateCompany(recruiterProfile.company.id, payload);
+      setRecruiterProfile((prev) => (prev ? { ...prev, company: updatedCompany } : prev));
+      setCompanyProfileSaveStatus('✅ Company profile saved.');
+    } catch (error) {
+      setCompanyProfileSaveStatus(`❌ ${error.message}`);
+    }
+  };
+
+  const handleSaveRecruiterProfile = async (payload) => {
+    try {
+      const updated = await updateRecruiterProfile(payload);
+      setRecruiterProfile(updated);
+    } catch (error) {
+      setCompanyProfileSaveStatus(`❌ ${error.message}`);
+    }
+  };
+
+  const handleUploadCompanyLogo = async (file) => {
+    if (!recruiterProfile?.company?.id) return;
+    setCompanyProfileSaveStatus('');
+    try {
+      const updatedCompany = await uploadCompanyLogo(recruiterProfile.company.id, file);
+      setRecruiterProfile((prev) => (prev ? { ...prev, company: updatedCompany } : prev));
+      setCompanyProfileSaveStatus('✅ Logo uploaded — pending admin verification.');
+    } catch (error) {
+      setCompanyProfileSaveStatus(`❌ ${error.message}`);
+    }
+  };
+
+  const handleVerifyRecruiterEmailRequest = async () => {
+    if (!currentUser?.email) return;
+    setVerifyEmailStatus('');
+    try {
+      await requestOtp(currentUser.email);
+      setVerifyEmailStatus('✅ OTP sent to your email.');
+    } catch (error) {
+      setVerifyEmailStatus(`❌ ${error.message}`);
+    }
+  };
+
+  const handleVerifyRecruiterEmailSubmit = async (otp) => {
+    setVerifyEmailStatus('');
+    try {
+      const updated = await verifyRecruiterEmailOtp(otp);
+      setRecruiterProfile(updated);
+      setVerifyEmailStatus('✅ Email verified.');
+    } catch (error) {
+      setVerifyEmailStatus(`❌ ${error.message}`);
+    }
+  };
+
+  const handleSubmitCompanyVerification = async (companyId, payload) => {
+    const updatedCompany = await submitCompanyVerification(companyId, payload);
+    setAdminCompanies((prev) => prev.map((c) => (c.id === companyId ? updatedCompany : c)));
+    return updatedCompany;
+  };
+
+  const refreshAuditLog = () => {
+    fetchAuditLog().then(setAuditLog).catch(console.error);
+  };
+
+  const handleAdminCloseJob = async (jobId) => {
+    const updatedJob = await updateJob(jobId, { status: 'CLOSED' });
+    setJobs((prev) => prev.map((j) => (j.id === updatedJob.id ? updatedJob : j)));
+    refreshAuditLog();
+  };
+
+  const handleAdminReopenJob = async (jobId) => {
+    const updatedJob = await updateJob(jobId, { status: 'ACTIVE' });
+    setJobs((prev) => prev.map((j) => (j.id === updatedJob.id ? updatedJob : j)));
+    refreshAuditLog();
+  };
+
+  const handleAdminDeleteJob = async (jobId) => {
+    await deleteJob(jobId);
+    setJobs((prev) => prev.filter((j) => j.id !== jobId));
+    refreshAuditLog();
+  };
+
   const handleLoginSuccess = (token, refresh, loginUserType, user) => {
     const normalizedUserType = loginUserType === 'recruiter' || loginUserType === 'admin' ? loginUserType : 'jobseeker';
     localStorage.setItem('accessToken', token);
@@ -386,6 +519,12 @@ function App() {
     setResumes([]);
     navigate('/login');
   };
+
+  useEffect(() => {
+    const handleSessionExpired = () => handleLogout();
+    window.addEventListener('auth:session-expired', handleSessionExpired);
+    return () => window.removeEventListener('auth:session-expired', handleSessionExpired);
+  }, []);
 
   const parseListInput = (value) => value
     .split(',')
@@ -482,9 +621,12 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated || userType !== 'recruiter') return;
     let active = true;
+    setInterviewsLoading(true);
+    setInterviewsError('');
     fetchInterviews()
-      .then((data) => { if (active) setInterviews(data); })
-      .catch(console.error);
+      .then((data) => { if (active) setInterviews(Array.isArray(data) ? data : []); })
+      .catch((error) => { if (active) setInterviewsError(error.message || 'Failed to load interviews'); })
+      .finally(() => { if (active) setInterviewsLoading(false); });
     return () => { active = false; };
   }, [isAuthenticated, userType]);
 
@@ -580,6 +722,12 @@ function App() {
   }, [userType]);
 
   const openApplicationDetail = async (applicationId) => {
+    const existingApplication = applications.find((application) => application.id === applicationId);
+    if (existingApplication) {
+      setSelectedApplicationId(applicationId);
+      setSelectedApplicationDetail(existingApplication);
+    }
+
     try {
       const detail = await fetchApplicationDetail(applicationId);
       setSelectedApplicationId(applicationId);
@@ -652,12 +800,17 @@ function App() {
     }
   };
 
-  const shortlistApplication = async (applicationId) => {
+  const shortlistApplication = async (applicationId, nextStatus = 'SHORTLISTED') => {
     try {
-      await updateApplication(applicationId, { status: 'SHORTLISTED' });
+      const updatedApplication = await updateApplication(applicationId, { status: nextStatus });
+      setSelectedApplicationDetail((current) => (
+        current?.id === applicationId ? { ...current, ...updatedApplication } : current
+      ));
       refreshApplications_func();
       refreshGroupedApplications();
-      setMessage('✅ Application shortlisted. Candidate notified.');
+      setMessage(nextStatus === 'QUIZ_SCHEDULED'
+        ? '✅ Candidate selected for the quiz round. Quiz access email sent.'
+        : '✅ Application shortlisted. Candidate notified.');
       setTimeout(() => setMessage(''), 3000);
     } catch (error) {
       setMessage(`❌ ${error.message}`);
@@ -699,13 +852,17 @@ function App() {
     }
   };
 
-  const recruiterCompanyName = currentUser?.company_name || '';
+  // recruiterProfile.company.name is the authoritative, always-fresh source (it's re-fetched
+  // after login and lazily created server-side if missing). currentUser.company_name is just
+  // a snapshot from the login/register response and can be stale or null for recruiters whose
+  // RecruiterProfile didn't exist yet at that moment (e.g. Google sign-in).
+  const recruiterCompanyName = recruiterProfile?.company?.name || currentUser?.company_name || '';
 
   useEffect(() => {
-    if (currentUser?.company_name && !jobCompany) {
-      setJobCompany(currentUser.company_name);
+    if (recruiterCompanyName && jobCompany !== recruiterCompanyName) {
+      setJobCompany(recruiterCompanyName);
     }
-  }, [currentUser?.company_name, jobCompany]);
+  }, [recruiterCompanyName]);
 
   const recruiterJobs = recruiterCompanyName
     ? jobs.filter((job) => job.company?.toLowerCase() === recruiterCompanyName.toLowerCase())
@@ -785,7 +942,8 @@ function App() {
   }, [jobs, searchTerm, locationFilter, selectedCategory]);
 
   const apply = async (jobId) => {
-    if (!jobId) {
+    const normalizedJobId = Number(jobId ?? routeJobId ?? selectedJobId);
+    if (!normalizedJobId || !jobs.some((job) => Number(job.id) === normalizedJobId)) {
       setMessage('❌ No job selected to apply for.');
       return;
     }
@@ -802,7 +960,7 @@ function App() {
       const payload = resumeFile
         ? new FormData()
         : {
-            job: jobId,
+            job: normalizedJobId,
             applicant_name: applicantName.trim(),
             applicant_email: applicantEmail.trim(),
             resume,
@@ -813,7 +971,7 @@ function App() {
           };
 
       if (resumeFile) {
-        payload.append('job', jobId);
+        payload.append('job', normalizedJobId);
         payload.append('applicant_name', applicantName.trim());
         payload.append('applicant_email', applicantEmail.trim());
         payload.append('resume', resume);
@@ -835,6 +993,7 @@ function App() {
         setMessage('✅ Application submitted successfully!');
       }
       setSelectedJobId(null);
+      navigate('/dashboard');
       setApplicantName('');
       setApplicantEmail('');
       setResume('');
@@ -849,6 +1008,16 @@ function App() {
     }
   };
 
+  const openApplicationPage = (jobId) => {
+    const normalizedJobId = Number(jobId);
+    if (!normalizedJobId || !jobs.some((job) => Number(job.id) === normalizedJobId)) {
+      setMessage('❌ No job selected to apply for.');
+      return;
+    }
+    setSelectedJobId(normalizedJobId);
+    navigate(`/apply/${normalizedJobId}`);
+  };
+
   const resetJobForm = () => {
     setEditingJobId(null);
     setJobTitle('');
@@ -858,14 +1027,24 @@ function App() {
     setJobSalary('');
     setJobCategory('General');
     setJobRequiredSkills('');
-    setCompanyLogo('');
-    setCompanyCoverImage('');
-    setCompanyWebsite('');
-    setCompanyIndustry('');
-    setCompanySize('');
-    setCompanyRating('');
-    setCompanyEmployees('');
-    setCompanyDescription('');
+    setJobSalaryMin('');
+    setJobSalaryMax('');
+    setJobExperienceLevel('');
+    setJobWorkMode('');
+    setJobScreeningThreshold('50');
+    setJobResumeScreeningAt('');
+    setJobQuizStartsAt('');
+    setJobQuizEndsAt('');
+    setJobQuizDurationMinutes('60');
+    setJobQuizInstructions('');
+    setJobTechnicalInterviewAt('');
+    setJobTechnicalInterviewMode('Video');
+    setJobTechnicalInterviewLink('');
+    setJobTechnicalInterviewInstructions('');
+    setJobFinalSelectionAt('');
+    setJobQuizPdf(null);
+    setJobQuizQuestions([]);
+    setJobQuizStatus('');
   };
 
   const openCompanyPage = (companyName) => {
@@ -877,6 +1056,17 @@ function App() {
     setCompanyPageCompany(null);
     setSelectedJobId(null);
   };
+
+  const routeJobId = (() => {
+    const match = location.pathname.match(/\/apply\/(\d+)/);
+    return match ? Number(match[1]) : null;
+  })();
+
+  useEffect(() => {
+    if (routeJobId && routeJobId !== Number(selectedJobId)) {
+      setSelectedJobId(routeJobId);
+    }
+  }, [routeJobId, selectedJobId]);
 
   const companyJobs = companyPageCompany
     ? jobs.filter((job) => job.company.toLowerCase() === companyPageCompany.toLowerCase())
@@ -909,8 +1099,12 @@ function App() {
   const showProfileOnboarding = isAuthenticated && !profileLoading && userType !== 'admin' && userType !== 'recruiter' && userProfile && !userProfile.profile_completed;
   const showProfileLoading = isAuthenticated && profileLoading && !userProfile;
 
-  const companySelectedJob = companyPageCompany && selectedJobId
-    ? companyJobs.find((job) => job.id === selectedJobId)
+  const activeJobId = Number(selectedJobId ?? routeJobId ?? 0);
+  const companySelectedJob = companyPageCompany && activeJobId
+    ? companyJobs.find((job) => Number(job.id) === activeJobId)
+    : null;
+  const applicationJob = activeJobId
+    ? jobs.find((job) => Number(job.id) === activeJobId)
     : null;
 
   const companyGallery = companyProfile?.gallery?.length
@@ -949,14 +1143,23 @@ function App() {
     setJobSalary(job.salary || '');
     setJobCategory(job.category || 'General');
     setJobRequiredSkills(job.required_skills || '');
-    setCompanyLogo(job.company_meta?.logo || '');
-    setCompanyCoverImage(job.company_meta?.cover_image || '');
-    setCompanyWebsite(job.company_meta?.website || '');
-    setCompanyIndustry(job.company_meta?.industry || '');
-    setCompanySize(job.company_meta?.size || '');
-    setCompanyRating(job.company_meta?.rating?.toString() || '');
-    setCompanyEmployees(job.company_meta?.employees || '');
-    setCompanyDescription(job.company_meta?.description || '');
+    setJobSalaryMin(job.salary_min != null ? String(job.salary_min) : '');
+    setJobSalaryMax(job.salary_max != null ? String(job.salary_max) : '');
+    setJobExperienceLevel(job.experience_level || '');
+    setJobWorkMode(job.work_mode || '');
+    setJobScreeningThreshold(String(job.screening_threshold ?? 50));
+    setJobResumeScreeningAt(utcToDateTimeLocal(job.resume_screening_at));
+    setJobQuizStartsAt(utcToDateTimeLocal(job.quiz_starts_at));
+    setJobQuizEndsAt(utcToDateTimeLocal(job.quiz_ends_at));
+    setJobQuizDurationMinutes(String(job.quiz_duration_minutes ?? 60));
+    setJobQuizInstructions(job.quiz_instructions || '');
+    setJobTechnicalInterviewAt(utcToDateTimeLocal(job.technical_interview_at));
+    setJobTechnicalInterviewMode(job.technical_interview_mode || 'Video');
+    setJobTechnicalInterviewLink(job.technical_interview_link || '');
+    setJobTechnicalInterviewInstructions(job.technical_interview_instructions || '');
+    setJobFinalSelectionAt(utcToDateTimeLocal(job.final_selection_at));
+    setJobQuizQuestions(job.quiz_questions || []);
+    setJobQuizStatus(job.quiz_questions_status || '');
     navigate('/recruiter/post-job');
     setMessage('Editing existing job. Save changes or cancel to continue.');
   };
@@ -980,51 +1183,64 @@ function App() {
 
   const postJob = async (e) => {
     e.preventDefault();
-    if (!jobTitle || !jobDescription || !jobLocation || !jobCompany) {
-      setMessage('❌ Please fill all fields');
-      return;
-    }
     if (!isAuthenticated || userType !== 'recruiter') {
       setMessage('❌ Please log in as a recruiter to post jobs.');
       return;
     }
+    if (!jobCompany) {
+      setMessage('❌ We couldn\'t find your company yet — open Company Profile once to finish setting it up, then try posting again.');
+      return;
+    }
+    const missing = [
+      !jobTitle && 'Job title',
+      !jobLocation && 'Location',
+      !jobDescription && 'Job description',
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      setMessage(`❌ Please fill in: ${missing.join(', ')}`);
+      return;
+    }
 
-    const companyMetaPayload = {
-      name: jobCompany,
-      logo: companyLogo,
-      cover_image: companyCoverImage,
-      website: companyWebsite,
-      industry: companyIndustry,
-      size: companySize,
-      description: companyDescription,
-      employees: companyEmployees,
-      rating: companyRating ? Number(companyRating) : null,
+    const jobPayload = {
+      title: jobTitle,
+      company: jobCompany,
       location: jobLocation,
+      salary: jobSalary,
+      description: jobDescription,
+      category: jobCategory,
+      required_skills: jobRequiredSkills,
+      salary_min: jobSalaryMin ? Number(jobSalaryMin) : null,
+      salary_max: jobSalaryMax ? Number(jobSalaryMax) : null,
+      experience_level: jobExperienceLevel,
+      work_mode: jobWorkMode,
+      screening_threshold: Number(jobScreeningThreshold || 50),
+      resume_screening_at: dateTimeLocalToUtc(jobResumeScreeningAt),
+      quiz_starts_at: dateTimeLocalToUtc(jobQuizStartsAt),
+      quiz_ends_at: dateTimeLocalToUtc(jobQuizEndsAt),
+      quiz_duration_minutes: Number(jobQuizDurationMinutes || 60),
+      quiz_instructions: jobQuizInstructions,
+      technical_interview_at: dateTimeLocalToUtc(jobTechnicalInterviewAt),
+      technical_interview_mode: jobTechnicalInterviewMode,
+      technical_interview_link: jobTechnicalInterviewLink,
+      technical_interview_instructions: jobTechnicalInterviewInstructions,
+      final_selection_at: dateTimeLocalToUtc(jobFinalSelectionAt),
     };
 
     try {
       if (editingJobId) {
-        const updatedJob = await updateJob(editingJobId, {
-          title: jobTitle,
-          company: jobCompany,
-          location: jobLocation,
-          salary: jobSalary,
-          description: jobDescription,
-          company_meta: companyMetaPayload,
-        });
+        const updatedJob = await updateJob(editingJobId, jobPayload);
+        if (jobQuizPdf) await uploadJobQuizPdf(updatedJob.id, jobQuizPdf);
+        if (jobQuizQuestions.length && jobQuizStatus === 'PREVIEW') await updateJobQuizQuestions(updatedJob.id, jobQuizQuestions);
         setJobs((prevJobs) => prevJobs.map((job) => (job.id === updatedJob.id ? updatedJob : job)));
         setFilteredJobs((prevJobs) => prevJobs.map((job) => (job.id === updatedJob.id ? updatedJob : job)));
         setMessage('✅ Job updated successfully!');
         resetJobForm();
       } else {
-        const newJob = await createJob({
-          title: jobTitle,
-          company: jobCompany,
-          location: jobLocation,
-          salary: jobSalary,
-          description: jobDescription,
-          company_meta: companyMetaPayload,
-        });
+        const newJob = await createJob(jobPayload);
+        if (jobQuizPdf) {
+          const parsed = await uploadJobQuizPdf(newJob.id, jobQuizPdf);
+          if (parsed.questions?.length) await updateJobQuizQuestions(newJob.id, parsed.questions);
+        }
         setJobs([newJob, ...jobs]);
         setFilteredJobs([newJob, ...filteredJobs]);
         setMessage('✅ Job posted successfully!');
@@ -1037,7 +1253,25 @@ function App() {
     }
   };
 
+  const handleQuizPdfSelect = async (file) => {
+    setJobQuizPdf(file);
+    setJobQuizStatus('PARSING');
+    try {
+      const preview = await previewJobQuizPdf(file);
+      setJobQuizQuestions(preview.questions || []);
+      setJobQuizStatus('PREVIEW');
+    } catch (error) {
+      setJobQuizQuestions([]);
+      setJobQuizStatus(`ERROR: ${error.message}`);
+    }
+  };
+
   const showLegacyNavbar = userType === 'jobseeker' && !!companyPageCompany;
+  const quizTokenMatch = location.pathname.match(/^\/quiz\/([^/]+)/);
+
+  if (quizTokenMatch) {
+    return <QuizAccessPage token={quizTokenMatch[1]} />;
+  }
 
   return (
     <>
@@ -1212,7 +1446,7 @@ function App() {
         <div className="nav-container">
           <div className="logo">
             <span className="logo-icon">⭐</span>
-            vipseekers
+            Vipseekers
           </div>
           <div className="nav-links">
             {userType === 'recruiter' ? (
@@ -1282,7 +1516,28 @@ function App() {
 
       {userType === 'jobseeker' ? (
         <>
-          {companyPageCompany ? (
+          {location.pathname.startsWith('/apply/') ? (
+            <ApplicationPage
+              job={applicationJob}
+              resumes={resumes}
+              selectedResumeId={selectedResumeId}
+              setSelectedResumeId={setSelectedResumeId}
+              resume={resume}
+              setResume={setResume}
+              resumeFile={resumeFile}
+              setResumeFile={setResumeFile}
+              applicantName={applicantName}
+              setApplicantName={setApplicantName}
+              applicantEmail={applicantEmail}
+              setApplicantEmail={setApplicantEmail}
+              coverLetter={coverLetter}
+              setCoverLetter={setCoverLetter}
+              applicantSkills={applicantSkills}
+              setApplicantSkills={setApplicantSkills}
+              onSubmit={apply}
+              onCancel={() => { setSelectedJobId(null); closeCompanyPage(); navigate('/dashboard'); }}
+            />
+          ) : companyPageCompany ? (
           <div className="company-page-view">
             <div className="company-page-header">
               <div className="company-page-back">
@@ -1312,7 +1567,7 @@ function App() {
                       )}
                     </div>
                     {companyJobs[0] && (
-                      <button className="company-apply-cta" onClick={() => setSelectedJobId(companyJobs[0].id)}>
+                      <button className="company-apply-cta" onClick={() => openApplicationPage(companyJobs[0].id)}>
                         Apply to {companyJobs[0].title}
                       </button>
                     )}
@@ -1378,6 +1633,32 @@ function App() {
                 </div>
               </div>
 
+              <div className="company-overview-card company-verification-card">
+                <div className="company-verification-header">
+                  <div>
+                    <h3>🛡 Verification</h3>
+                    <p>
+                      {companyProfile?.is_verified
+                        ? 'This company has been reviewed and verified by Smart Job Portal.'
+                        : 'This company has not completed verification yet.'}
+                    </p>
+                  </div>
+                  <div className="company-verification-score">
+                    <strong>{companyProfile?.verification_score ?? 0}/100</strong>
+                    <span>{companyProfile?.verification_level || 'Unverified'}</span>
+                  </div>
+                </div>
+                <div className="company-verification-score-bar">
+                  <div
+                    className="company-verification-score-fill"
+                    style={{ width: `${companyProfile?.verification_score ?? 0}%` }}
+                  />
+                </div>
+                <p className="company-verification-disclaimer">
+                  Based on information and verification checks completed on Smart Job Portal.
+                </p>
+              </div>
+
               <div className="company-gallery-card">
                 <h3>Gallery</h3>
                 <div className="company-gallery-grid">
@@ -1409,7 +1690,7 @@ function App() {
                         </div>
                         <div className="company-job-actions">
                           <BookmarkButton job={job} bookmarks={bookmarks} onChange={setBookmarks} />
-                          <button className="apply-btn" onClick={() => setSelectedJobId(job.id)}>
+                          <button className="apply-btn" onClick={() => openApplicationPage(job.id)}>
                             Apply
                           </button>
                           <button className="view-details-btn" onClick={() => setSelectedJobId(job.id)}>
@@ -1425,7 +1706,7 @@ function App() {
                     <div>
                       <p>Ready to join {companyProfile?.name}? Apply to the latest opening now.</p>
                     </div>
-                    <button className="apply-btn" onClick={() => setSelectedJobId(companyJobs[0].id)}>
+                    <button className="apply-btn" onClick={() => openApplicationPage(companyJobs[0].id)}>
                       Apply to {companyJobs[0].title}
                     </button>
                   </div>
@@ -1539,7 +1820,7 @@ function App() {
             bookmarks={bookmarks}
             onBookmarksChange={setBookmarks}
             jobs={filteredJobs}
-            onApplyJob={setSelectedJobId}
+            onApplyJob={openApplicationPage}
             onLogout={handleLogout}
             userProfile={userProfile}
             profileForm={profileForm}
@@ -1570,6 +1851,7 @@ function App() {
             theme={theme}
             onToggleTheme={toggleTheme}
           />
+        )}
         )}
         </>
       ) : (
@@ -1609,7 +1891,23 @@ function App() {
               />
               <Route
                 path="companies"
-                element={<AdminCompaniesPage companies={adminCompanies} loading={adminLoading} />}
+                element={<AdminCompaniesPage companies={adminCompanies} loading={adminLoading} onSubmitVerification={handleSubmitCompanyVerification} />}
+              />
+              <Route
+                path="jobs"
+                element={(
+                  <AdminJobsPage
+                    jobs={jobs}
+                    loading={adminLoading}
+                    onCloseJob={handleAdminCloseJob}
+                    onReopenJob={handleAdminReopenJob}
+                    onDeleteJob={handleAdminDeleteJob}
+                  />
+                )}
+              />
+              <Route
+                path="audit-log"
+                element={<AdminAuditLogPage logs={auditLog} loading={adminLoading} onRefresh={refreshAuditLog} />}
               />
               <Route path="*" element={<Navigate to="dashboard" replace />} />
             </Route>
@@ -1628,11 +1926,11 @@ function App() {
                     jobs={recruiterJobs}
                     applications={recruiterApplications}
                     loading={analyticsLoading}
-                    onQuickAction={(slug) => {
-                      if (slug === 'post-job') navigate('/recruiter/post-job');
-                      if (slug === 'applications') navigate('/recruiter/applications');
-                      if (slug === 'interviews') navigate('/recruiter/interviews');
-                    }}
+                    onQuickAction={(slug) => navigate(`/recruiter/${slug}`)}
+                    recruiterProfile={recruiterProfile}
+                    onVerifyEmailRequest={handleVerifyRecruiterEmailRequest}
+                    onVerifyEmailSubmit={handleVerifyRecruiterEmailSubmit}
+                    verifyEmailStatus={verifyEmailStatus}
                   />
                 }
               />
@@ -1648,14 +1946,24 @@ function App() {
                       jobSalary,
                       jobCategory,
                       jobRequiredSkills,
-                      companyLogo,
-                      companyCoverImage,
-                      companyWebsite,
-                      companyIndustry,
-                      companySize,
-                      companyRating,
-                      companyEmployees,
-                      companyDescription,
+                      jobSalaryMin,
+                      jobSalaryMax,
+                      jobExperienceLevel,
+                      jobWorkMode,
+                      jobScreeningThreshold,
+                      jobResumeScreeningAt,
+                      jobQuizStartsAt,
+                      jobQuizEndsAt,
+                      jobQuizDurationMinutes,
+                      jobQuizInstructions,
+                      jobTechnicalInterviewAt,
+                      jobTechnicalInterviewMode,
+                      jobTechnicalInterviewLink,
+                      jobTechnicalInterviewInstructions,
+                      jobFinalSelectionAt,
+                      jobQuizPdf,
+                      jobQuizQuestions,
+                      jobQuizStatus,
                     }}
                     onFieldChange={(field, value) => {
                       const setters = {
@@ -1666,14 +1974,24 @@ function App() {
                         jobSalary: setJobSalary,
                         jobCategory: setJobCategory,
                         jobRequiredSkills: setJobRequiredSkills,
-                        companyLogo: setCompanyLogo,
-                        companyCoverImage: setCompanyCoverImage,
-                        companyWebsite: setCompanyWebsite,
-                        companyIndustry: setCompanyIndustry,
-                        companySize: setCompanySize,
-                        companyRating: setCompanyRating,
-                        companyEmployees: setCompanyEmployees,
-                        companyDescription: setCompanyDescription,
+                        jobSalaryMin: setJobSalaryMin,
+                        jobSalaryMax: setJobSalaryMax,
+                        jobExperienceLevel: setJobExperienceLevel,
+                        jobWorkMode: setJobWorkMode,
+                        jobScreeningThreshold: setJobScreeningThreshold,
+                        jobResumeScreeningAt: setJobResumeScreeningAt,
+                        jobQuizStartsAt: setJobQuizStartsAt,
+                        jobQuizEndsAt: setJobQuizEndsAt,
+                        jobQuizDurationMinutes: setJobQuizDurationMinutes,
+                        jobQuizInstructions: setJobQuizInstructions,
+                        jobTechnicalInterviewAt: setJobTechnicalInterviewAt,
+                        jobTechnicalInterviewMode: setJobTechnicalInterviewMode,
+                        jobTechnicalInterviewLink: setJobTechnicalInterviewLink,
+                        jobTechnicalInterviewInstructions: setJobTechnicalInterviewInstructions,
+                        jobFinalSelectionAt: setJobFinalSelectionAt,
+                        jobQuizPdf: setJobQuizPdf,
+                        jobQuizQuestions: setJobQuizQuestions,
+                        jobQuizStatus: setJobQuizStatus,
                       };
                       setters[field]?.(value);
                     }}
@@ -1684,6 +2002,7 @@ function App() {
                     }}
                     isEditing={Boolean(editingJobId)}
                     recruiterCompanyName={recruiterCompanyName}
+                    onQuizPdfSelect={handleQuizPdfSelect}
                   />
                 }
               />
@@ -1723,7 +2042,8 @@ function App() {
                 element={
                   <RecruiterInterviewsPage
                     interviews={interviews}
-                    loading={interviews.length === 0 && isAuthenticated}
+                    loading={interviewsLoading}
+                    error={interviewsError}
                     onStart={(interview) => {
                       const roomId = interview.room_name || interview.meeting_url?.split('/').pop() || interview.id;
                       navigate(`/interview/${roomId}`);
@@ -1772,19 +2092,22 @@ function App() {
                 path="company-profile"
                 element={
                   <RecruiterCompanyProfilePage
-                    companyProfile={recruiterCompanyProfile}
-                    loading={!recruiterCompanyProfile && isAuthenticated}
-                    onSave={(profile) => { setRecruiterCompanyProfile(profile); }}
+                    recruiterProfile={recruiterProfile}
+                    loading={recruiterProfileLoading && !recruiterProfile}
+                    saveStatus={companyProfileSaveStatus}
+                    onSaveCompany={handleSaveCompanyProfile}
+                    onSaveRecruiter={handleSaveRecruiterProfile}
+                    onUploadLogo={handleUploadCompanyLogo}
                   />
                 }
               />
               <Route
                 path="analytics"
-                element={<RecruiterAnalyticsPage analytics={analyticsData} loading={analyticsLoading} />}
+                element={<RecruiterAnalyticsPage analytics={analyticsData} loading={analyticsLoading} theme={theme} />}
               />
               <Route
                 path="subscription"
-                element={<RecruiterPlaceholderPage title="Subscription" description="Subscription is coming soon." actionLabel="Upgrade now" onAction={() => {}} />}
+                element={<RecruiterSubscriptionPage />}
               />
               <Route
                 path="settings"
@@ -1808,7 +2131,7 @@ function App() {
       )}
 
       {/* Application Modal */}
-      {!companyPageCompany && selectedJobId && (
+      {!companyPageCompany && selectedJobId && !location.pathname.startsWith('/apply/') && (
         <div className="modal-overlay" onClick={() => setSelectedJobId(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
@@ -1949,14 +2272,24 @@ function App() {
                   <strong>{selectedApplicationDetail.viewed_at ? new Date(selectedApplicationDetail.viewed_at).toLocaleString() : 'Not yet'}</strong>
                 </div>
                 <div className="detail-actions">
-                      {['APPLIED', 'RECRUITER_VIEWED'].includes(selectedApplicationDetail.status) && (
+                  {['APPLIED', 'RECRUITER_VIEWED', 'REJECTED', 'RESUME_REJECTED'].includes(selectedApplicationDetail.status) && (
                     <>
-                      <button className="approve-btn" onClick={() => shortlistApplication(selectedApplicationDetail.id)}>
-                        Shortlist
+                      <button
+                        className="approve-btn"
+                        onClick={() => shortlistApplication(
+                          selectedApplicationDetail.id,
+                          selectedApplicationDetail.status === 'RESUME_REJECTED' ? 'QUIZ_SCHEDULED' : 'SHORTLISTED',
+                        )}
+                      >
+                        {selectedApplicationDetail.status === 'RESUME_REJECTED'
+                          ? 'Select for quiz'
+                          : selectedApplicationDetail.status === 'REJECTED' ? 'Shortlist again' : 'Shortlist'}
                       </button>
-                      <button className="reject-btn" onClick={() => rejectApplication(selectedApplicationDetail.id)}>
-                        Reject
-                      </button>
+                      {!['REJECTED', 'RESUME_REJECTED'].includes(selectedApplicationDetail.status) && (
+                        <button className="reject-btn" onClick={() => rejectApplication(selectedApplicationDetail.id)}>
+                          Reject
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -2043,6 +2376,20 @@ function App() {
                     <p>Resume not scanned yet.</p>
                   )}
                 </section>
+
+                {userType === 'recruiter' ? (
+                  <RecruiterWorkflowPanel
+                    applicationId={selectedApplicationDetail.id}
+                    onStatusChanged={(nextStatus) => {
+                      setSelectedApplicationDetail((prev) => ({ ...prev, status: nextStatus }));
+                      setApplications((prev) => prev.map((application) => (
+                        application.id === selectedApplicationDetail.id ? { ...application, status: nextStatus } : application
+                      )));
+                    }}
+                  />
+                ) : (
+                  <CandidateWorkflowPanel applicationId={selectedApplicationDetail.id} />
+                )}
 
                 <section className="detail-section">
                   <h3>Interview planning</h3>

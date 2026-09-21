@@ -20,6 +20,71 @@ const authHeaders = () => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
+let refreshPromise = null;
+
+const clearStoredSession = () => {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('userType');
+  localStorage.removeItem('user');
+  window.dispatchEvent(new Event('auth:session-expired'));
+};
+
+const refreshAccessToken = async () => {
+  const refreshToken = localStorage.getItem('refreshToken');
+  if (!refreshToken) {
+    return false;
+  }
+
+  if (!refreshPromise) {
+    refreshPromise = fetch(`${API_BASE_URL}/auth/token/refresh/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh: refreshToken }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          return false;
+        }
+        const data = await response.json();
+        if (!data.access) {
+          return false;
+        }
+        localStorage.setItem('accessToken', data.access);
+        if (data.refresh) {
+          localStorage.setItem('refreshToken', data.refresh);
+        }
+        return true;
+      })
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
+};
+
+const apiFetch = async (url, options = {}) => {
+  let response = await fetch(url, options);
+  if (response.status !== 401 || url.endsWith('/auth/token/refresh/')) {
+    return response;
+  }
+
+  const refreshed = await refreshAccessToken();
+  if (refreshed) {
+    response = await fetch(url, {
+      ...options,
+      headers: { ...(options.headers || {}), ...authHeaders() },
+    });
+  }
+
+  if (response.status === 401) {
+    clearStoredSession();
+  }
+  return response;
+};
+
 const extractApiError = (data, fallback) => {
   if (!data) {
     return fallback;
@@ -130,6 +195,24 @@ export async function verifyOtp(email, otp) {
   return contentType.includes('application/json') ? response.json() : { message: await response.text() };
 }
 
+export async function requestPasswordReset(email) {
+  const response = await fetch(`${API_BASE_URL}/auth/request-password-reset/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  return handleJsonResponse(response, 'Failed to send reset code');
+}
+
+export async function resetPassword(email, otp, newPassword) {
+  const response = await fetch(`${API_BASE_URL}/auth/reset-password/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, otp, new_password: newPassword }),
+  });
+  return handleJsonResponse(response, 'Failed to reset password');
+}
+
 export async function fetchUserProfile() {
   const response = await fetch(`${API_BASE_URL}/auth/profile/`, {
     headers: {
@@ -196,8 +279,11 @@ export async function fetchJobs() {
   return response.json();
 }
 
-export async function fetchApplications() {
-  const response = await fetch(`${API_BASE_URL}/applications/`, {
+export async function fetchApplications(filters = {}) {
+  const query = new URLSearchParams(
+    Object.entries(filters).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+  ).toString();
+  const response = await apiFetch(`${API_BASE_URL}/applications/${query ? `?${query}` : ''}`, {
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
@@ -235,6 +321,73 @@ export async function fetchAnalytics() {
   return response.json();
 }
 
+export async function fetchRecommendedJobs() {
+  const response = await apiFetch(`${API_BASE_URL}/jobs/recommended/`, {
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+  });
+  if (!response.ok) throw new Error('Failed to load recommended jobs');
+  return response.json();
+}
+
+export async function compareCandidates(applicationIds) {
+  const response = await apiFetch(`${API_BASE_URL}/applications/compare/?ids=${applicationIds.join(',')}`, {
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+  });
+  if (!response.ok) throw new Error('Failed to compare candidates');
+  return response.json();
+}
+
+export async function submitInterviewFeedback(interviewId, payload) {
+  const response = await apiFetch(`${API_BASE_URL}/interviews/${interviewId}/feedback/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(extractApiError(data, 'Failed to save interview feedback'));
+  }
+  return response.json();
+}
+
+export async function exportApplicationsReport(filters = {}) {
+  const query = new URLSearchParams(
+    Object.entries(filters).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+  ).toString();
+  const response = await apiFetch(`${API_BASE_URL}/analytics/export/${query ? `?${query}` : ''}`, {
+    headers: { ...authHeaders() },
+  });
+  if (!response.ok) throw new Error('Failed to export report');
+  return response.blob();
+}
+
+export async function fetchSubscriptionPlans() {
+  const response = await fetch(`${API_BASE_URL}/subscription-plans/`);
+  if (!response.ok) throw new Error('Failed to load subscription plans');
+  return response.json();
+}
+
+export async function fetchSubscription() {
+  const response = await apiFetch(`${API_BASE_URL}/subscription/`, {
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+  });
+  if (!response.ok) throw new Error('Failed to load subscription');
+  return response.json();
+}
+
+export async function createSubscriptionTransaction(planId, idempotencyKey) {
+  const response = await apiFetch(`${API_BASE_URL}/subscription/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ plan_id: planId, idempotency_key: idempotencyKey }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(extractApiError(data, 'Failed to create subscription checkout'));
+  }
+  return response.json();
+}
+
 export async function fetchAdminDashboard() {
   const response = await fetch(`${API_BASE_URL}/admin/dashboard/`, {
     headers: {
@@ -244,6 +397,19 @@ export async function fetchAdminDashboard() {
   });
   if (!response.ok) {
     throw new Error('Failed to load admin dashboard');
+  }
+  return response.json();
+}
+
+export async function fetchAuditLog() {
+  const response = await fetch(`${API_BASE_URL}/admin/audit-log/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Failed to load audit log');
   }
   return response.json();
 }
@@ -293,6 +459,89 @@ export async function fetchCompanies() {
     throw new Error('Failed to load companies');
   }
   return response.json();
+}
+
+async function handleJsonResponse(response, fallback) {
+  if (!response.ok) {
+    let errorMsg = fallback;
+    try {
+      const errorData = await response.json();
+      errorMsg = extractApiError(errorData, fallback);
+    } catch (e) {
+      errorMsg = `HTTP ${response.status}: ${response.statusText}`;
+    }
+    throw new Error(errorMsg);
+  }
+  return response.json();
+}
+
+export async function updateCompany(companyId, payload) {
+  const response = await fetch(`${API_BASE_URL}/companies/${companyId}/`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleJsonResponse(response, 'Failed to update company profile');
+}
+
+export async function uploadCompanyLogo(companyId, file) {
+  const formData = new FormData();
+  formData.append('logo', file);
+  const response = await fetch(`${API_BASE_URL}/companies/${companyId}/logo/`, {
+    method: 'POST',
+    headers: { ...authHeaders() },
+    body: formData,
+  });
+  return handleJsonResponse(response, 'Failed to upload company logo');
+}
+
+export async function submitCompanyVerification(companyId, payload) {
+  const response = await fetch(`${API_BASE_URL}/companies/${companyId}/verification/`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleJsonResponse(response, 'Failed to submit verification');
+}
+
+export async function fetchRecruiterProfile() {
+  const response = await fetch(`${API_BASE_URL}/auth/recruiter-profile/`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+  });
+  return handleJsonResponse(response, 'Failed to load recruiter profile');
+}
+
+export async function updateRecruiterProfile(payload) {
+  const response = await fetch(`${API_BASE_URL}/auth/recruiter-profile/`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleJsonResponse(response, 'Failed to update recruiter profile');
+}
+
+export async function verifyRecruiterEmailOtp(otp) {
+  const response = await fetch(`${API_BASE_URL}/auth/verify-recruiter-email/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ otp }),
+  });
+  return handleJsonResponse(response, 'Failed to verify email');
 }
 
 export async function createJob(jobData) {
@@ -382,7 +631,7 @@ export async function createApplication(application) {
 }
 
 export async function fetchConversations() {
-  const response = await fetch(`${API_BASE_URL}/conversations/`, {
+  const response = await apiFetch(`${API_BASE_URL}/conversations/`, {
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
@@ -457,14 +706,21 @@ export async function createMessage(applicationId, message) {
 }
 
 export async function fetchInterviews() {
-  const response = await fetch(`${API_BASE_URL}/interviews/`, {
+  const response = await apiFetch(`${API_BASE_URL}/interviews/`, {
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
     },
   });
   if (!response.ok) {
-    throw new Error('Failed to load interviews');
+    let errorMessage = 'Failed to load interviews';
+    try {
+      const data = await response.json();
+      errorMessage = extractApiError(data, errorMessage);
+    } catch {
+      // Keep the fallback for non-JSON responses.
+    }
+    throw new Error(errorMessage);
   }
   return response.json();
 }
@@ -483,16 +739,98 @@ export async function fetchInterviewByRoom(roomId) {
 }
 
 export async function fetchApplicationDetail(applicationId) {
-  const response = await fetch(`${API_BASE_URL}/applications/${applicationId}/`, {
+  const response = await apiFetch(`${API_BASE_URL}/applications/${applicationId}/`, {
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
     },
   });
   if (!response.ok) {
-    throw new Error('Failed to load application details');
+    let errorMessage = 'Failed to load application details';
+    try {
+      const errorData = await response.json();
+      errorMessage = extractApiError(errorData, errorMessage);
+    } catch {
+      // Keep the fallback when the server does not return JSON.
+    }
+    throw new Error(errorMessage);
   }
   return response.json();
+}
+
+async function workflowRequest(url, options = {}, fallbackMessage) {
+  const response = await apiFetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+      ...(options.headers || {}),
+    },
+  });
+  if (!response.ok) {
+    let errorMessage = fallbackMessage;
+    try {
+      errorMessage = extractApiError(await response.json(), fallbackMessage);
+    } catch {
+      // Keep the fallback for non-JSON responses.
+    }
+    throw new Error(errorMessage);
+  }
+  return response.json();
+}
+
+export function fetchApplicationWorkflow(applicationId) {
+  return workflowRequest(`${API_BASE_URL}/applications/${applicationId}/workflow/`, {}, 'Failed to load application workflow');
+}
+
+export function publishTechnicalQuiz(applicationId, questions, passingScore = 70) {
+  return workflowRequest(
+    `${API_BASE_URL}/applications/${applicationId}/workflow/`,
+    { method: 'PUT', body: JSON.stringify({ questions, passing_score: passingScore }) },
+    'Failed to publish technical quiz',
+  );
+}
+
+export function submitTechnicalQuiz(applicationId, answers) {
+  return workflowRequest(
+    `${API_BASE_URL}/applications/${applicationId}/workflow/`,
+    { method: 'POST', body: JSON.stringify({ answers }) },
+    'Failed to submit technical quiz',
+  );
+}
+
+export function sendOfferLetter(applicationId, offer) {
+  return workflowRequest(
+    `${API_BASE_URL}/applications/${applicationId}/offer/`,
+    { method: 'PUT', body: JSON.stringify(offer) },
+    'Failed to send offer letter',
+  );
+}
+
+export function respondToOffer(applicationId, offerStatus) {
+  return workflowRequest(
+    `${API_BASE_URL}/applications/${applicationId}/offer/`,
+    { method: 'POST', body: JSON.stringify({ status: offerStatus }) },
+    'Failed to update offer letter',
+  );
+}
+
+export async function fetchQuizByToken(token) {
+  const response = await fetch(`${API_BASE_URL}/quiz/access/${encodeURIComponent(token)}/`);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || 'Quiz is unavailable');
+  return data;
+}
+
+export async function submitQuizByToken(token, answers) {
+  const response = await fetch(`${API_BASE_URL}/quiz/access/${encodeURIComponent(token)}/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ answers }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || 'Failed to submit quiz');
+  return data;
 }
 
 export async function updateApplication(applicationId, data) {
@@ -515,6 +853,53 @@ export async function updateApplication(applicationId, data) {
     throw new Error(errorMsg);
   }
   return response.json();
+}
+
+export async function uploadJobQuizPdf(jobId, pdf) {
+  const formData = new FormData();
+  formData.append('pdf', pdf);
+  const response = await apiFetch(`${API_BASE_URL}/jobs/${jobId}/quiz-question-set/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || 'Failed to parse quiz PDF');
+  return data;
+}
+
+export async function previewJobQuizPdf(pdf) {
+  const formData = new FormData();
+  formData.append('pdf', pdf);
+  const response = await apiFetch(`${API_BASE_URL}/jobs/quiz-question-set/preview/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: formData,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || 'Failed to preview quiz PDF');
+  return data;
+}
+
+export async function updateJobQuizQuestions(jobId, questions) {
+  const response = await apiFetch(`${API_BASE_URL}/jobs/${jobId}/quiz-question-set/`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ questions }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || 'Failed to publish quiz questions');
+  return data;
+}
+
+export async function resendQuizEmail(applicationId) {
+  const response = await apiFetch(`${API_BASE_URL}/applications/${applicationId}/quiz/resend/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || 'Failed to resend quiz email');
+  return data;
 }
 
 export async function updateApplicationResume(applicationId, { resumeFile, resumeText } = {}) {
@@ -565,7 +950,7 @@ export async function deleteJob(jobId) {
 }
 
 export async function fetchBookmarks() {
-  const response = await fetch(`${API_BASE_URL}/bookmarks/`, {
+  const response = await apiFetch(`${API_BASE_URL}/bookmarks/`, {
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
@@ -621,7 +1006,7 @@ export async function removeBookmark(bookmarkId) {
 }
 
 export async function fetchResumes() {
-  const response = await fetch(`${API_BASE_URL}/resumes/`, {
+  const response = await apiFetch(`${API_BASE_URL}/resumes/`, {
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
@@ -747,7 +1132,7 @@ export async function scheduleInterview(payload) {
 }
 
 export async function fetchNotifications() {
-  const response = await fetch(`${API_BASE_URL}/notifications/`, {
+  const response = await apiFetch(`${API_BASE_URL}/notifications/`, {
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),

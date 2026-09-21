@@ -116,6 +116,15 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
+    # ScopedRateThrottle only throttles views that explicitly set `throttle_scope`,
+    # so this is safe to enable globally without affecting unrelated endpoints.
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.ScopedRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'auth': '10/min',
+        'otp': '5/min',
+    },
 }
 
 SIMPLE_JWT = {

@@ -1,12 +1,14 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, ListChecks, Users, Building2, LogOut } from 'lucide-react';
+import { LayoutDashboard, ListChecks, Users, Building2, Briefcase, ScrollText, LogOut } from 'lucide-react';
 
 const links = [
   { path: 'dashboard', label: 'Dashboard', Icon: LayoutDashboard },
   { path: 'applications', label: 'Applications', Icon: ListChecks },
+  { path: 'jobs', label: 'Jobs', Icon: Briefcase },
   { path: 'users', label: 'Users', Icon: Users },
   { path: 'companies', label: 'Companies', Icon: Building2 },
+  { path: 'audit-log', label: 'Audit Log', Icon: ScrollText },
 ];
 
 export default function AdminSidebar({ currentUser, onLogout }) {
@@ -18,7 +20,7 @@ export default function AdminSidebar({ currentUser, onLogout }) {
             A
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">VIPSeekers</p>
+            <p className="text-xs uppercase tracking-[0.28em] text-slate-500 dark:text-slate-400">Vipseekers</p>
             <p className="text-base font-semibold text-slate-950 dark:text-slate-50">Admin console</p>
           </div>
         </div>

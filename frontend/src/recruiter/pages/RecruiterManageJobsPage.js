@@ -2,6 +2,12 @@ import React from 'react';
 import EmptyState from '../../components/ui/EmptyState';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 
+const STATUS_STYLE = {
+  ACTIVE: 'bg-[#EAF3DE] text-[#27500A]',
+  CLOSED: 'bg-[#FCEBEB] text-[#791F1F]',
+  DRAFT: 'bg-[#FAEEDA] text-[#633806]',
+};
+
 export default function RecruiterManageJobsPage({ jobs, loading, onEdit, onDelete }) {
   if (loading) {
     return <LoadingSpinner label="Loading posted jobs..." />;
@@ -18,9 +24,15 @@ export default function RecruiterManageJobsPage({ jobs, loading, onEdit, onDelet
     );
   }
 
+  const handleDelete = (job) => {
+    if (window.confirm(`Delete "${job.title}"? This can't be undone.`)) {
+      onDelete(job);
+    }
+  };
+
   return (
     <div className="space-y-6 font-sans text-[#14181C] dark:text-slate-50">
-      <div className="flex flex-col gap-3 border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-6 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-6 shadow-sm sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="font-data text-xs tracking-[0.2em] text-[#0E7C66]">POSTINGS</p>
           <h1 className="mt-2 font-display text-xl font-semibold text-[#14181C] dark:text-slate-50">Manage jobs</h1>
@@ -29,14 +41,14 @@ export default function RecruiterManageJobsPage({ jobs, loading, onEdit, onDelet
         <button
           type="button"
           onClick={() => onEdit(null)}
-          className="inline-flex items-center justify-center bg-[#0E7C66] px-5 py-3 text-sm font-medium text-white hover:bg-[#0B6553]"
+          className="inline-flex items-center justify-center rounded-full bg-[#0E7C66] px-5 py-3 text-sm font-medium text-white shadow-sm shadow-[#0E7C66]/30 transition hover:-translate-y-0.5 hover:bg-[#0B6553] hover:shadow-md"
         >
           Post new job
         </button>
       </div>
 
-      <div className="border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900">
-        <div className="grid grid-cols-1 gap-0 border-b border-[#14181C]/10 dark:border-white/10 px-6 py-4 font-data text-xs tracking-widest text-[#5B6660] dark:text-slate-400 sm:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_0.8fr]">
+      <div className="overflow-hidden rounded-2xl border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm">
+        <div className="hidden gap-0 border-b border-[#14181C]/10 dark:border-white/10 px-6 py-4 font-data text-xs tracking-widest text-[#5B6660] dark:text-slate-400 lg:grid lg:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_0.8fr]">
           <div>JOB TITLE</div>
           <div>LOCATION</div>
           <div>APPLICATIONS</div>
@@ -45,7 +57,7 @@ export default function RecruiterManageJobsPage({ jobs, loading, onEdit, onDelet
           <div className="text-right">ACTIONS</div>
         </div>
         {jobs.map((job) => (
-          <div key={job.id} className="grid grid-cols-1 gap-2 border-b border-[#14181C]/8 dark:border-white/10 px-6 py-5 text-sm text-[#14181C] dark:text-slate-50 sm:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_0.8fr] sm:items-center sm:gap-0">
+          <div key={job.id} className="grid grid-cols-1 gap-2 border-b border-[#14181C]/8 dark:border-white/10 px-6 py-5 text-sm text-[#14181C] dark:text-slate-50 last:border-b-0 lg:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_0.8fr] lg:items-center lg:gap-0">
             <div>
               <p className="font-medium text-[#14181C] dark:text-slate-50">{job.title}</p>
               <p className="text-sm text-[#5B6660] dark:text-slate-400">{job.company}</p>
@@ -53,16 +65,16 @@ export default function RecruiterManageJobsPage({ jobs, loading, onEdit, onDelet
             <div className="text-[#5B6660] dark:text-slate-400">{job.location}</div>
             <div className="font-data text-[#5B6660] dark:text-slate-400">{job.application_count ?? '—'}</div>
             <div>
-              <span className={`inline-flex px-2.5 py-1 text-xs font-medium ${job.status === 'ACTIVE' ? 'bg-[#EAF3DE] text-[#27500A]' : 'bg-[#F1EFE8] text-[#444441] dark:text-slate-400'}`}>
+              <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${STATUS_STYLE[job.status] || 'bg-[#F1EFE8] text-[#444441] dark:text-slate-400'}`}>
                 {job.status}
               </span>
             </div>
             <div className="font-data text-[#5B6660] dark:text-slate-400">{new Date(job.posted_at).toLocaleDateString()}</div>
-            <div className="flex items-center gap-2 sm:justify-end">
-              <button onClick={() => onEdit(job)} className="border border-[#14181C]/15 dark:border-white/15 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-[#14181C] dark:text-slate-50 hover:border-[#14181C]/30">
+            <div className="flex items-center gap-2 lg:justify-end">
+              <button onClick={() => onEdit(job)} className="rounded-full border border-[#14181C]/15 dark:border-white/15 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-medium text-[#14181C] dark:text-slate-50 transition hover:border-[#14181C]/30">
                 Edit
               </button>
-              <button onClick={() => onDelete(job)} className="bg-[#B3402F] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#963426]">
+              <button onClick={() => handleDelete(job)} className="rounded-full bg-[#B3402F] px-3 py-1.5 text-xs font-medium text-white transition hover:bg-[#963426]">
                 Delete
               </button>
             </div>

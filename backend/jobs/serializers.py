@@ -1,11 +1,100 @@
+from urllib.parse import urlparse
+
 from rest_framework import serializers
-from .models import Conversation, Job, Application, Message, Company, RecruiterProfile, UserProfile, Bookmark, Interview, Notification, Resume
+from .models import Conversation, Job, Application, Message, Company, RecruiterProfile, UserProfile, Bookmark, Interview, InterviewFeedback, Notification, Resume, AdminAuditLog, TechnicalQuiz, OfferLetter, Reminder, SubscriptionPlan, Subscription, PaymentTransaction
 from django.contrib.auth.models import User
 from django.db.models import Q
 
 from .status_utils import normalize_application_status, to_display_application_status
 
+
+FREE_EMAIL_DOMAINS = {
+    'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'live.com',
+    'icloud.com', 'aol.com', 'protonmail.com', 'proton.me', 'rediffmail.com',
+    'yandex.com', 'zoho.com', 'mail.com',
+}
+
+VERIFICATION_WEIGHTS = {
+    'email_verified': 15,
+    'phone_verified': 10,
+    'identity_verified': 10,
+    'website_verified': 15,
+    'email_domain_match': 15,
+    'registration_verified': 20,
+    'address_verified': 10,
+    'logo_verified': 5,
+}
+
+
+def _extract_domain(value):
+    if not value:
+        return ''
+    value = value.strip().lower()
+    if '@' in value:
+        return value.split('@')[-1]
+    if '://' not in value:
+        value = f'//{value}'
+    domain = (urlparse(value).netloc or '').split(':')[0]
+    return domain[4:] if domain.startswith('www.') else domain
+
+
+def get_email_domain_match(user_email, company_website):
+    email_domain = _extract_domain(user_email)
+    site_domain = _extract_domain(company_website)
+    return bool(email_domain and site_domain and email_domain == site_domain)
+
+
+def get_is_free_email(user_email):
+    return _extract_domain(user_email) in FREE_EMAIL_DOMAINS
+
+
+def compute_verification_score_for_company(company):
+    recruiter_profile = company.recruiters.first()
+    checks = {
+        'email_verified': bool(recruiter_profile and recruiter_profile.email_verified),
+        'phone_verified': bool(recruiter_profile and recruiter_profile.phone_verified),
+        'identity_verified': bool(recruiter_profile and recruiter_profile.identity_verified),
+        'website_verified': company.website_verified,
+        'email_domain_match': bool(recruiter_profile and get_email_domain_match(recruiter_profile.user.email, company.website)),
+        'registration_verified': company.registration_verified,
+        'address_verified': company.address_verified,
+        'logo_verified': company.logo_status == 'verified',
+    }
+    score = sum(VERIFICATION_WEIGHTS[key] for key, passed in checks.items() if passed)
+    return score, checks
+
+
+def get_verification_level(score):
+    if score >= 90:
+        return 'Highly Verified'
+    if score >= 75:
+        return 'Verified'
+    if score >= 50:
+        return 'Partially Verified'
+    return 'Unverified'
+
+
+def compute_profile_completion_for_company(company):
+    recruiter_profile = company.recruiters.first()
+    checks = [
+        bool(company.name),
+        bool(company.logo),
+        bool(company.website),
+        bool(company.phone),
+        bool(company.address and company.city and company.state and company.country),
+        bool(company.industry),
+        bool(company.size),
+        company.year_founded is not None,
+        bool(company.description),
+        bool(company.registration_number),
+        bool(recruiter_profile and recruiter_profile.job_title),
+        bool(recruiter_profile and recruiter_profile.phone_number),
+    ]
+    return round(100 * sum(checks) / len(checks))
+
 class InterviewSerializer(serializers.ModelSerializer):
+    feedback = serializers.SerializerMethodField()
+
     class Meta:
         model = Interview
         fields = [
@@ -22,9 +111,84 @@ class InterviewSerializer(serializers.ModelSerializer):
             'interviewer_name',
             'notes',
             'status',
+            'feedback',
             'created_at',
         ]
         read_only_fields = ['recruiter', 'candidate', 'meeting_url', 'room_name', 'created_at']
+
+    def get_feedback(self, obj):
+        request = self.context.get('request')
+        queryset = obj.feedback.all()
+        if request and request.user.is_authenticated and get_user_role_for_serializer(request.user) != 'admin':
+            queryset = queryset.filter(reviewer=request.user)
+        return InterviewFeedbackSerializer(queryset, many=True).data
+
+
+def get_user_role_for_serializer(user):
+    return user.last_name if user.last_name in ['jobseeker', 'recruiter', 'admin'] else 'jobseeker'
+
+
+class InterviewFeedbackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InterviewFeedback
+        fields = [
+            'id', 'interview', 'reviewer', 'technical_rating', 'communication_rating',
+            'culture_rating', 'overall_rating', 'recommendation', 'strengths',
+            'concerns', 'notes', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['reviewer', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        for field in ['technical_rating', 'communication_rating', 'culture_rating', 'overall_rating']:
+            value = attrs.get(field, 0)
+            if value < 0 or value > 5:
+                raise serializers.ValidationError({field: 'Rating must be between 0 and 5.'})
+        return attrs
+
+
+class ReminderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Reminder
+        fields = ['id', 'interview', 'application', 'recipient', 'reminder_type', 'scheduled_for', 'status', 'sent_at', 'last_error', 'created_at']
+        read_only_fields = ['recipient', 'status', 'sent_at', 'last_error', 'created_at']
+
+
+class SubscriptionPlanSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubscriptionPlan
+        fields = ['id', 'name', 'code', 'description', 'amount', 'currency', 'billing_interval', 'features', 'is_active']
+
+
+class SubscriptionSerializer(serializers.ModelSerializer):
+    plan = SubscriptionPlanSerializer(read_only=True)
+
+    class Meta:
+        model = Subscription
+        fields = ['id', 'user', 'plan', 'status', 'provider', 'provider_customer_id', 'provider_subscription_id', 'current_period_start', 'current_period_end', 'cancel_at_period_end', 'created_at', 'updated_at']
+        read_only_fields = fields
+
+
+class PaymentTransactionSerializer(serializers.ModelSerializer):
+    plan = SubscriptionPlanSerializer(read_only=True)
+
+    class Meta:
+        model = PaymentTransaction
+        fields = ['id', 'user', 'plan', 'amount', 'currency', 'provider', 'provider_payment_id', 'idempotency_key', 'status', 'metadata', 'created_at', 'updated_at']
+        read_only_fields = fields
+
+
+class TechnicalQuizSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TechnicalQuiz
+        fields = ['id', 'application', 'recruiter', 'questions', 'passing_score', 'score', 'answers', 'status', 'completed_at', 'created_at', 'updated_at']
+        read_only_fields = ['recruiter', 'score', 'answers', 'status', 'completed_at', 'created_at', 'updated_at']
+
+
+class OfferLetterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OfferLetter
+        fields = ['id', 'application', 'recruiter', 'salary', 'joining_date', 'terms', 'status', 'sent_at', 'responded_at', 'created_at', 'updated_at']
+        read_only_fields = ['application', 'recruiter', 'status', 'sent_at', 'responded_at', 'created_at', 'updated_at']
 
 
 class ResumeSerializer(serializers.ModelSerializer):
@@ -53,12 +217,20 @@ class BookmarkSerializer(serializers.ModelSerializer):
 
 
 class CompanySerializer(serializers.ModelSerializer):
+    is_verified = serializers.SerializerMethodField()
+    verification_score = serializers.SerializerMethodField()
+    verification_level = serializers.SerializerMethodField()
+    profile_completion_score = serializers.SerializerMethodField()
+    recruiter_email = serializers.SerializerMethodField()
+    recruiter_name = serializers.SerializerMethodField()
+
     class Meta:
         model = Company
         fields = [
             'id',
             'name',
             'logo',
+            'logo_status',
             'cover_image',
             'website',
             'industry',
@@ -68,7 +240,111 @@ class CompanySerializer(serializers.ModelSerializer):
             'employees',
             'rating',
             'created_at',
+            'address',
+            'city',
+            'state',
+            'country',
+            'year_founded',
+            'phone',
+            'registration_number',
+            'gstin',
+            'website_verified',
+            'registration_verified',
+            'address_verified',
+            'admin_review_status',
+            'admin_notes',
+            'reviewed_at',
+            'is_verified',
+            'verification_score',
+            'verification_level',
+            'profile_completion_score',
+            'recruiter_email',
+            'recruiter_name',
         ]
+        # Logo changes must go through the dedicated upload action (resets logo_status to
+        # 'pending'); verification fields are only ever admin-set via the /verification/ action.
+        read_only_fields = [
+            'logo',
+            'logo_status',
+            'website_verified',
+            'registration_verified',
+            'address_verified',
+            'admin_review_status',
+            'admin_notes',
+            'reviewed_at',
+        ]
+
+    def get_recruiter_email(self, obj):
+        recruiter_profile = obj.recruiters.first()
+        return recruiter_profile.user.email if recruiter_profile else ''
+
+    def get_recruiter_name(self, obj):
+        recruiter_profile = obj.recruiters.first()
+        return recruiter_profile.user.first_name if recruiter_profile else ''
+
+    def get_is_verified(self, obj):
+        return obj.admin_review_status == 'approved'
+
+    def get_verification_score(self, obj):
+        score, _ = compute_verification_score_for_company(obj)
+        return score
+
+    def get_verification_level(self, obj):
+        score, _ = compute_verification_score_for_company(obj)
+        return get_verification_level(score)
+
+    def get_profile_completion_score(self, obj):
+        return compute_profile_completion_for_company(obj)
+
+
+class RecruiterProfileSerializer(serializers.ModelSerializer):
+    company = CompanySerializer(read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
+    full_name = serializers.CharField(source='user.first_name', read_only=True)
+    profile_completion_score = serializers.SerializerMethodField()
+    verification_score = serializers.SerializerMethodField()
+    verification_level = serializers.SerializerMethodField()
+    email_domain_match = serializers.SerializerMethodField()
+    is_free_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RecruiterProfile
+        fields = [
+            'id',
+            'company',
+            'email',
+            'full_name',
+            'job_title',
+            'phone_number',
+            'linkedin_url',
+            'profile_photo',
+            'email_verified',
+            'phone_verified',
+            'identity_verified',
+            'profile_completion_score',
+            'verification_score',
+            'verification_level',
+            'email_domain_match',
+            'is_free_email',
+        ]
+        read_only_fields = ['email_verified', 'phone_verified', 'identity_verified']
+
+    def get_profile_completion_score(self, obj):
+        return compute_profile_completion_for_company(obj.company)
+
+    def get_verification_score(self, obj):
+        score, _ = compute_verification_score_for_company(obj.company)
+        return score
+
+    def get_verification_level(self, obj):
+        score, _ = compute_verification_score_for_company(obj.company)
+        return get_verification_level(score)
+
+    def get_email_domain_match(self, obj):
+        return get_email_domain_match(obj.user.email, obj.company.website)
+
+    def get_is_free_email(self, obj):
+        return get_is_free_email(obj.user.email)
 
 
 class JobSerializer(serializers.ModelSerializer):
@@ -89,8 +365,26 @@ class JobSerializer(serializers.ModelSerializer):
             'status',
             'company_meta',
             'posted_at',
+            'salary_min',
+            'salary_max',
+            'experience_level',
+            'work_mode',
+            'screening_threshold',
+            'resume_screening_at',
+            'quiz_starts_at',
+            'quiz_ends_at',
+            'quiz_duration_minutes',
+            'quiz_instructions',
+            'technical_interview_at',
+            'technical_interview_mode',
+            'technical_interview_link',
+            'technical_interview_instructions',
+            'final_selection_at',
+            'quiz_question_pdf',
+            'quiz_questions',
+            'quiz_questions_status',
         ]
-        read_only_fields = ['recruiter', 'posted_at']
+        read_only_fields = ['recruiter', 'posted_at', 'quiz_question_pdf', 'quiz_questions', 'quiz_questions_status']
 
     def _get_company(self, name):
         if not hasattr(self, '_company_cache'):
@@ -104,9 +398,18 @@ class JobSerializer(serializers.ModelSerializer):
         fallback = {}
         company = self._get_company(obj.company)
         if company:
+            # Only expose the logo to job seekers once an admin has verified it —
+            # an unreviewed upload could be anything a recruiter dropped in.
+            verified_logo_url = ''
+            if company.logo and company.logo_status == 'verified':
+                try:
+                    verified_logo_url = company.logo.url
+                except ValueError:
+                    verified_logo_url = ''
+            score, _ = compute_verification_score_for_company(company)
             fallback = {
                 'name': company.name,
-                'logo': company.logo,
+                'logo': verified_logo_url,
                 'cover_image': company.cover_image,
                 'website': company.website,
                 'industry': company.industry,
@@ -115,6 +418,9 @@ class JobSerializer(serializers.ModelSerializer):
                 'employees': company.employees,
                 'rating': company.rating,
                 'location': company.location,
+                'is_verified': company.admin_review_status == 'approved',
+                'verification_score': score,
+                'verification_level': get_verification_level(score),
             }
         else:
             fallback = {
@@ -128,6 +434,9 @@ class JobSerializer(serializers.ModelSerializer):
                 'employees': '',
                 'rating': None,
                 'location': obj.location,
+                'is_verified': False,
+                'verification_score': 0,
+                'verification_level': get_verification_level(0),
             }
 
         if not obj.company_meta:
@@ -146,6 +455,9 @@ class JobSerializer(serializers.ModelSerializer):
                 'employees': meta.get('employees') or fallback['employees'],
                 'rating': meta.get('rating') if meta.get('rating') is not None else fallback['rating'],
                 'location': meta.get('location') or fallback['location'],
+                'is_verified': fallback['is_verified'],
+                'verification_score': fallback['verification_score'],
+                'verification_level': fallback['verification_level'],
             }
 
         return fallback
@@ -223,6 +535,8 @@ class ConversationSerializer(serializers.ModelSerializer):
 class ApplicationSerializer(serializers.ModelSerializer):
     job_title = serializers.CharField(source='job.title', read_only=True)
     job_company = serializers.CharField(source='job.company', read_only=True)
+    job_work_mode = serializers.CharField(source='job.work_mode', read_only=True)
+    job_experience_level = serializers.CharField(source='job.experience_level', read_only=True)
     applicant_name = serializers.CharField(required=False, allow_blank=True)
     applicant_email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     resume_file = serializers.FileField(required=False, allow_null=True)
@@ -240,6 +554,8 @@ class ApplicationSerializer(serializers.ModelSerializer):
             'job',
             'job_title',
             'job_company',
+            'job_work_mode',
+            'job_experience_level',
             'applicant',
             'applicant_name',
             'applicant_email',
@@ -266,7 +582,7 @@ class ApplicationSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         if 'status' in data:
-            data['status'] = to_display_application_status(normalize_application_status(data['status']))
+            data['status'] = normalize_application_status(data['status'])
         return data
 
     def get_message_count(self, obj):
@@ -291,16 +607,29 @@ class RegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(min_length=6, write_only=True)
     user_type = serializers.ChoiceField(choices=['jobseeker', 'recruiter'])
+
+    # Recruiter details
+    job_title = serializers.CharField(required=False, allow_blank=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True)
+    linkedin_url = serializers.CharField(required=False, allow_blank=True)
+
+    # Company details
     company_name = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
     company_website = serializers.CharField(required=False, allow_blank=True)
     company_industry = serializers.CharField(required=False, allow_blank=True)
     company_size = serializers.CharField(required=False, allow_blank=True)
     company_description = serializers.CharField(required=False, allow_blank=True)
     company_location = serializers.CharField(required=False, allow_blank=True)
-    company_logo = serializers.CharField(required=False, allow_blank=True)
     company_cover_image = serializers.CharField(required=False, allow_blank=True)
     company_employees = serializers.CharField(required=False, allow_blank=True)
-    company_rating = serializers.DecimalField(max_digits=3, decimal_places=2, required=False, allow_null=True, default=None)
+    company_address = serializers.CharField(required=False, allow_blank=True)
+    company_city = serializers.CharField(required=False, allow_blank=True)
+    company_state = serializers.CharField(required=False, allow_blank=True)
+    company_country = serializers.CharField(required=False, allow_blank=True)
+    company_year_founded = serializers.IntegerField(required=False, allow_null=True, default=None)
+    company_phone = serializers.CharField(required=False, allow_blank=True)
+    company_registration_number = serializers.CharField(required=False, allow_blank=True)
+    company_gstin = serializers.CharField(required=False, allow_blank=True)
 
     def validate_email(self, value):
         normalized_email = value.strip().lower()
@@ -336,11 +665,17 @@ class RegisterSerializer(serializers.Serializer):
                 company.size = validated_data.get('company_size', company.size) or company.size
                 company.description = validated_data.get('company_description', company.description) or company.description
                 company.location = validated_data.get('company_location', company.location) or company.location
-                company.logo = validated_data.get('company_logo', company.logo) or company.logo
                 company.cover_image = validated_data.get('company_cover_image', company.cover_image) or company.cover_image
                 company.employees = validated_data.get('company_employees', company.employees) or company.employees
-                if validated_data.get('company_rating') is not None:
-                    company.rating = validated_data.get('company_rating')
+                company.address = validated_data.get('company_address', company.address) or company.address
+                company.city = validated_data.get('company_city', company.city) or company.city
+                company.state = validated_data.get('company_state', company.state) or company.state
+                company.country = validated_data.get('company_country', company.country) or company.country
+                company.phone = validated_data.get('company_phone', company.phone) or company.phone
+                company.registration_number = validated_data.get('company_registration_number', company.registration_number) or company.registration_number
+                company.gstin = validated_data.get('company_gstin', company.gstin) or company.gstin
+                if validated_data.get('company_year_founded') is not None:
+                    company.year_founded = validated_data.get('company_year_founded')
                 company.save()
 
                 profile, _ = RecruiterProfile.objects.get_or_create(
@@ -349,7 +684,10 @@ class RegisterSerializer(serializers.Serializer):
                 )
                 if profile.company_id != company.id:
                     profile.company = company
-                    profile.save(update_fields=['company'])
+                profile.job_title = validated_data.get('job_title', profile.job_title) or profile.job_title
+                profile.phone_number = validated_data.get('phone_number', profile.phone_number) or profile.phone_number
+                profile.linkedin_url = validated_data.get('linkedin_url', profile.linkedin_url) or profile.linkedin_url
+                profile.save()
 
         return user
 
@@ -450,3 +788,20 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_role(self, obj):
         return obj.last_name if obj.last_name in ['jobseeker', 'recruiter', 'admin'] else 'jobseeker'
+
+
+class AdminAuditLogSerializer(serializers.ModelSerializer):
+    admin_name = serializers.SerializerMethodField()
+    admin_email = serializers.EmailField(source='admin.email', read_only=True)
+
+    class Meta:
+        model = AdminAuditLog
+        fields = [
+            'id', 'admin_name', 'admin_email', 'action', 'target_type',
+            'target_id', 'target_label', 'details', 'created_at',
+        ]
+
+    def get_admin_name(self, obj):
+        if not obj.admin:
+            return 'Deleted admin'
+        return obj.admin.first_name or obj.admin.username

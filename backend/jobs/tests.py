@@ -6,7 +6,7 @@ from django.core import mail
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Application, Job, Company, RecruiterProfile, LoginOTP, Conversation, Interview
+from .models import Application, Job, Company, RecruiterProfile, LoginOTP, Conversation, Interview, InterviewFeedback, Reminder, TechnicalQuiz, OfferLetter, SubscriptionPlan, PaymentTransaction
 
 
 class AuthFlowTests(TestCase):
@@ -136,8 +136,29 @@ class AuthFlowTests(TestCase):
         response = client.get(f'/api/applications/{application.id}/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['status'], 'Viewed')
+        self.assertEqual(response.json()['status'], 'RECRUITER_VIEWED')
         self.assertIsNotNone(response.json()['viewed_at'])
+
+    def test_application_detail_keeps_canonical_status_codes_for_recruiters(self):
+        applicant = User.objects.create_user(username='applicant-detail@example.com', email='applicant-detail@example.com', password='secret123')
+        recruiter = User.objects.create_user(username='recruiter-detail@example.com', email='recruiter-detail@example.com', password='secret123', last_name='recruiter')
+        job = Job.objects.create(recruiter=recruiter, title='Frontend Engineer', company='Acme', location='Remote', description='Ship UI')
+        application = Application.objects.create(
+            job=job,
+            applicant=applicant,
+            applicant_name='Applicant Detail',
+            applicant_email='applicant-detail@example.com',
+            status='APPLIED',
+        )
+
+        client = APIClient()
+        refresh = RefreshToken.for_user(recruiter)
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
+
+        response = client.get(f'/api/applications/{application.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['status'], 'RECRUITER_VIEWED')
 
     def test_scheduling_interview_updates_application_and_creates_conversation(self):
         applicant = User.objects.create_user(username='applicant3@example.com', email='applicant3@example.com', password='secret123')
@@ -297,3 +318,93 @@ class AuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('Your application status', mail.outbox[0].subject)
+
+    def test_quiz_and_offer_workflow(self):
+        applicant = User.objects.create_user(username='workflow-applicant@example.com', email='workflow-applicant@example.com', password='secret123')
+        recruiter = User.objects.create_user(username='workflow-recruiter@example.com', email='workflow-recruiter@example.com', password='secret123', last_name='recruiter')
+        job = Job.objects.create(recruiter=recruiter, title='Backend Engineer', company='Acme', location='Remote', description='Build APIs')
+        application = Application.objects.create(job=job, applicant=applicant, applicant_name='Workflow Applicant', applicant_email=applicant.email, status='SHORTLISTED')
+        question = {'id': 'q1', 'prompt': 'Which protocol is used for web APIs?', 'options': ['HTTP', 'FTP'], 'correct_option': 'HTTP'}
+
+        recruiter_client = APIClient()
+        recruiter_client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(recruiter).access_token}')
+        publish_response = recruiter_client.put(
+            f'/api/applications/{application.id}/workflow/',
+            {'questions': [question]},
+            content_type='application/json',
+        )
+        self.assertEqual(publish_response.status_code, 200)
+        self.assertEqual(TechnicalQuiz.objects.get(application=application).status, 'PUBLISHED')
+
+        applicant_client = APIClient()
+        applicant_client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(applicant).access_token}')
+        submit_response = applicant_client.post(
+            f'/api/applications/{application.id}/workflow/',
+            {'answers': {'q1': 'HTTP'}},
+            content_type='application/json',
+        )
+        self.assertEqual(submit_response.status_code, 200)
+        self.assertTrue(submit_response.json()['passed'])
+
+        application.status = 'INTERVIEW_SCHEDULED'
+        application.save(update_fields=['status'])
+        offer_response = recruiter_client.put(
+            f'/api/applications/{application.id}/offer/',
+            {'salary': 'INR 12 LPA', 'joining_date': '2026-10-01', 'terms': 'Full-time employment'},
+            content_type='application/json',
+        )
+        self.assertEqual(offer_response.status_code, 200)
+        self.assertEqual(OfferLetter.objects.get(application=application).status, 'SENT')
+
+        accept_response = applicant_client.post(
+            f'/api/applications/{application.id}/offer/',
+            {'status': 'ACCEPTED'},
+            content_type='application/json',
+        )
+        self.assertEqual(accept_response.status_code, 200)
+        application.refresh_from_db()
+        self.assertEqual(application.status, 'JOINED')
+
+    def test_recruiter_can_filter_rank_and_compare_candidates(self):
+        applicant_one = User.objects.create_user(username='rank-one@example.com', email='rank-one@example.com', password='secret123')
+        applicant_two = User.objects.create_user(username='rank-two@example.com', email='rank-two@example.com', password='secret123')
+        recruiter = User.objects.create_user(username='rank-recruiter@example.com', email='rank-recruiter@example.com', password='secret123', last_name='recruiter')
+        job = Job.objects.create(recruiter=recruiter, title='Python Engineer', company='Acme', location='Remote', description='Build APIs', work_mode='Remote')
+        first = Application.objects.create(job=job, applicant=applicant_one, applicant_name='Rank One', applicant_email=applicant_one.email, skills='Python, Django', ai_match_score=92)
+        second = Application.objects.create(job=job, applicant=applicant_two, applicant_name='Rank Two', applicant_email=applicant_two.email, skills='Java', ai_match_score=42)
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(recruiter).access_token}')
+
+        ranked = client.get('/api/applications/?ordering=-ai_match_score&min_score=80&skills=Python')
+        self.assertEqual(ranked.status_code, 200)
+        self.assertEqual([item['id'] for item in ranked.json()], [first.id])
+
+        compared = client.get(f'/api/applications/compare/?ids={first.id},{second.id}')
+        self.assertEqual(compared.status_code, 200)
+        self.assertEqual([item['id'] for item in compared.json()], [first.id, second.id])
+
+    def test_interview_feedback_and_reminders_are_created(self):
+        applicant = User.objects.create_user(username='feedback-applicant@example.com', email='feedback-applicant@example.com', password='secret123')
+        recruiter = User.objects.create_user(username='feedback-recruiter@example.com', email='feedback-recruiter@example.com', password='secret123', last_name='recruiter')
+        job = Job.objects.create(recruiter=recruiter, title='Feedback Engineer', company='Acme', location='Remote', description='Review candidates')
+        application = Application.objects.create(job=job, applicant=applicant, applicant_name='Feedback Applicant', applicant_email=applicant.email, status='APPLIED')
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(recruiter).access_token}')
+        interview = client.post('/api/interviews/', {'application': application.id, 'interview_date': '2026-10-01', 'interview_time': '10:00', 'interview_mode': 'Video'}, content_type='application/json').json()
+        self.assertEqual(Reminder.objects.filter(interview_id=interview['id']).count(), 2)
+
+        response = client.post(f"/api/interviews/{interview['id']}/feedback/", {'overall_rating': 5, 'recommendation': 'STRONG_YES', 'notes': 'Excellent interview.'}, content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(InterviewFeedback.objects.get(interview_id=interview['id']).overall_rating, 5)
+
+    def test_subscription_transaction_is_idempotent(self):
+        recruiter = User.objects.create_user(username='billing-recruiter@example.com', email='billing-recruiter@example.com', password='secret123', last_name='recruiter')
+        plan = SubscriptionPlan.objects.create(name='Pro', code='pro', amount=999, features=['Advanced filters'])
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {RefreshToken.for_user(recruiter).access_token}')
+        payload = {'plan_id': plan.id, 'idempotency_key': 'billing-test-1'}
+        first = client.post('/api/subscription/', payload, content_type='application/json')
+        second = client.post('/api/subscription/', payload, content_type='application/json')
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(PaymentTransaction.objects.filter(idempotency_key='billing-test-1').count(), 1)

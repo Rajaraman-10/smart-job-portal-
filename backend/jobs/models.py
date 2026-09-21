@@ -45,6 +45,17 @@ class Job(models.Model):
         (STATUS_CLOSED, 'Closed'),
         (STATUS_DRAFT, 'Draft'),
     ]
+    EXPERIENCE_LEVEL_CHOICES = [
+        ('Entry', 'Entry Level'),
+        ('Mid', 'Mid Level'),
+        ('Senior', 'Senior Level'),
+        ('Lead', 'Lead / Manager'),
+    ]
+    WORK_MODE_CHOICES = [
+        ('Remote', 'Remote'),
+        ('Hybrid', 'Hybrid'),
+        ('On-site', 'On-site'),
+    ]
 
     recruiter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     title = models.CharField(max_length=255)
@@ -58,6 +69,27 @@ class Job(models.Model):
     company_meta = models.JSONField(blank=True, null=True, default=dict)
     posted_at = models.DateTimeField(auto_now_add=True)
 
+    # Structured filter fields (in addition to the free-text `salary`/`location` shown to
+    # everyone) — optional on the recruiter's part, used for search filtering when set.
+    salary_min = models.PositiveIntegerField(blank=True, null=True)
+    salary_max = models.PositiveIntegerField(blank=True, null=True)
+    experience_level = models.CharField(max_length=20, choices=EXPERIENCE_LEVEL_CHOICES, blank=True, default='')
+    work_mode = models.CharField(max_length=20, choices=WORK_MODE_CHOICES, blank=True, default='')
+    screening_threshold = models.PositiveIntegerField(default=50)
+    resume_screening_at = models.DateTimeField(blank=True, null=True)
+    quiz_starts_at = models.DateTimeField(blank=True, null=True)
+    quiz_ends_at = models.DateTimeField(blank=True, null=True)
+    quiz_duration_minutes = models.PositiveIntegerField(default=60)
+    quiz_instructions = models.TextField(blank=True, default='')
+    technical_interview_at = models.DateTimeField(blank=True, null=True)
+    technical_interview_mode = models.CharField(max_length=50, blank=True, default='Video')
+    technical_interview_link = models.CharField(max_length=500, blank=True, default='')
+    technical_interview_instructions = models.TextField(blank=True, default='')
+    final_selection_at = models.DateTimeField(blank=True, null=True)
+    quiz_question_pdf = models.FileField(upload_to='quiz_question_sets/', blank=True, null=True)
+    quiz_questions = models.JSONField(default=list, blank=True)
+    quiz_questions_status = models.CharField(max_length=30, default='NOT_UPLOADED')
+
     def __str__(self):
         return f"{self.title} at {self.company}"
 
@@ -66,10 +98,20 @@ class Application(models.Model):
         ('APPLIED', 'Applied'),
         ('RECRUITER_VIEWED', 'Recruiter Viewed'),
         ('SHORTLISTED', 'Shortlisted'),
+        ('RESUME_SHORTLISTED', 'Resume Shortlisted'),
+        ('RESUME_REJECTED', 'Resume Rejected'),
+        ('QUIZ_SCHEDULED', 'Quiz Scheduled'),
+        ('QUIZ_COMPLETED', 'Quiz Completed'),
+        ('QUIZ_PASSED', 'Quiz Passed'),
+        ('QUIZ_NOT_CLEARED', 'Quiz Not Cleared'),
         ('INTERVIEW_SCHEDULED', 'Interview Scheduled'),
         ('INTERVIEW_COMPLETED', 'Interview Completed'),
+        ('TECHNICAL_INTERVIEW_COMPLETED', 'Technical Interview Completed'),
+        ('TECHNICAL_INTERVIEW_PASSED', 'Technical Interview Passed'),
+        ('TECHNICAL_INTERVIEW_NOT_CLEARED', 'Technical Interview Not Cleared'),
         ('SELECTED', 'Selected'),
         ('REJECTED', 'Rejected'),
+        ('ON_HOLD', 'On Hold'),
         ('OFFER_SENT', 'Offer Sent'),
         ('JOINED', 'Joined'),
     ]
@@ -100,8 +142,20 @@ class Application(models.Model):
 
 
 class Company(models.Model):
+    LOGO_STATUS_CHOICES = [
+        ('none', 'None'),
+        ('pending', 'Pending Review'),
+        ('verified', 'Verified'),
+        ('rejected', 'Rejected'),
+    ]
+    ADMIN_REVIEW_STATUS_CHOICES = [
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
     name = models.CharField(max_length=255, unique=True)
-    logo = models.CharField(max_length=512, blank=True, default='')
+    logo = models.ImageField(upload_to='company_logos/', blank=True, null=True)
     cover_image = models.CharField(max_length=512, blank=True, default='')
     website = models.URLField(blank=True, default='')
     industry = models.CharField(max_length=255, blank=True, default='')
@@ -112,6 +166,25 @@ class Company(models.Model):
     rating = models.DecimalField(max_digits=3, decimal_places=2, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Company details (registration onboarding)
+    address = models.CharField(max_length=300, blank=True, default='')
+    city = models.CharField(max_length=100, blank=True, default='')
+    state = models.CharField(max_length=100, blank=True, default='')
+    country = models.CharField(max_length=100, blank=True, default='India')
+    year_founded = models.PositiveIntegerField(blank=True, null=True)
+    phone = models.CharField(max_length=30, blank=True, default='')
+    registration_number = models.CharField(max_length=100, blank=True, default='')  # CIN
+    gstin = models.CharField(max_length=50, blank=True, default='')
+
+    # Verification
+    logo_status = models.CharField(max_length=20, choices=LOGO_STATUS_CHOICES, default='none')
+    website_verified = models.BooleanField(default=False)
+    registration_verified = models.BooleanField(default=False)
+    address_verified = models.BooleanField(default=False)
+    admin_review_status = models.CharField(max_length=20, choices=ADMIN_REVIEW_STATUS_CHOICES, default='pending')
+    admin_notes = models.TextField(blank=True, default='')
+    reviewed_at = models.DateTimeField(blank=True, null=True)
+
     def __str__(self):
         return self.name
 
@@ -119,6 +192,15 @@ class RecruiterProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='recruiter_profile')
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='recruiters')
     created_at = models.DateTimeField(auto_now_add=True)
+
+    job_title = models.CharField(max_length=150, blank=True, default='')
+    phone_number = models.CharField(max_length=30, blank=True, default='')
+    linkedin_url = models.CharField(max_length=300, blank=True, default='')
+    profile_photo = models.ImageField(upload_to='recruiter_photos/', blank=True, null=True)
+
+    email_verified = models.BooleanField(default=False)
+    phone_verified = models.BooleanField(default=False)
+    identity_verified = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.user} -> {self.company}"
@@ -251,6 +333,191 @@ class Interview(models.Model):
         return f"Interview for {self.application}"
 
 
+class InterviewFeedback(models.Model):
+    RECOMMENDATION_CHOICES = [
+        ('STRONG_YES', 'Strong yes'),
+        ('YES', 'Yes'),
+        ('MAYBE', 'Maybe'),
+        ('NO', 'No'),
+    ]
+
+    interview = models.ForeignKey(Interview, on_delete=models.CASCADE, related_name='feedback')
+    reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='interview_feedback')
+    technical_rating = models.PositiveSmallIntegerField(default=0)
+    communication_rating = models.PositiveSmallIntegerField(default=0)
+    culture_rating = models.PositiveSmallIntegerField(default=0)
+    overall_rating = models.PositiveSmallIntegerField(default=0)
+    recommendation = models.CharField(max_length=20, choices=RECOMMENDATION_CHOICES, default='MAYBE')
+    strengths = models.TextField(blank=True, default='')
+    concerns = models.TextField(blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['interview', 'reviewer'], name='unique_interview_feedback_reviewer'),
+        ]
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"Feedback for {self.interview} by {self.reviewer}"
+
+
+class Reminder(models.Model):
+    TYPE_CHOICES = [
+        ('INTERVIEW_24H', 'Interview 24 hours before'),
+        ('INTERVIEW_1H', 'Interview 1 hour before'),
+        ('CUSTOM', 'Custom reminder'),
+    ]
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('SENT', 'Sent'),
+        ('FAILED', 'Failed'),
+    ]
+
+    interview = models.ForeignKey(Interview, on_delete=models.CASCADE, related_name='reminders', null=True, blank=True)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name='reminders')
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reminders')
+    reminder_type = models.CharField(max_length=30, choices=TYPE_CHOICES, default='CUSTOM')
+    scheduled_for = models.DateTimeField()
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    sent_at = models.DateTimeField(blank=True, null=True)
+    last_error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['interview', 'recipient', 'reminder_type'], name='unique_interview_reminder_recipient_type'),
+        ]
+        ordering = ['scheduled_for']
+
+    def __str__(self):
+        return f"{self.reminder_type} for {self.recipient}"
+
+
+class SubscriptionPlan(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    code = models.SlugField(max_length=50, unique=True)
+    description = models.TextField(blank=True, default='')
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    currency = models.CharField(max_length=3, default='INR')
+    billing_interval = models.CharField(max_length=20, default='month')
+    features = models.JSONField(default=list, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Subscription(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('ACTIVE', 'Active'),
+        ('PAST_DUE', 'Past due'),
+        ('CANCELLED', 'Cancelled'),
+        ('EXPIRED', 'Expired'),
+    ]
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='subscription')
+    plan = models.ForeignKey(SubscriptionPlan, on_delete=models.PROTECT, related_name='subscriptions')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    provider = models.CharField(max_length=30, default='manual')
+    provider_customer_id = models.CharField(max_length=255, blank=True, default='')
+    provider_subscription_id = models.CharField(max_length=255, blank=True, default='')
+    current_period_start = models.DateTimeField(blank=True, null=True)
+    current_period_end = models.DateTimeField(blank=True, null=True)
+    cancel_at_period_end = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user} - {self.plan}"
+
+
+class PaymentTransaction(models.Model):
+    STATUS_CHOICES = [
+        ('CREATED', 'Created'),
+        ('PENDING', 'Pending'),
+        ('SUCCEEDED', 'Succeeded'),
+        ('FAILED', 'Failed'),
+        ('REFUNDED', 'Refunded'),
+    ]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='payment_transactions')
+    plan = models.ForeignKey(SubscriptionPlan, on_delete=models.PROTECT, related_name='transactions')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default='INR')
+    provider = models.CharField(max_length=30, default='manual')
+    provider_payment_id = models.CharField(max_length=255, blank=True, default='')
+    idempotency_key = models.CharField(max_length=100, unique=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='CREATED')
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Payment {self.idempotency_key}"
+
+
+class TechnicalQuiz(models.Model):
+    STATUS_DRAFT = 'DRAFT'
+    STATUS_PUBLISHED = 'PUBLISHED'
+    STATUS_COMPLETED = 'COMPLETED'
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_PUBLISHED, 'Published'),
+        (STATUS_COMPLETED, 'Completed'),
+    ]
+
+    application = models.OneToOneField(Application, on_delete=models.CASCADE, related_name='technical_quiz')
+    recruiter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_technical_quizzes')
+    questions = models.JSONField(default=list, blank=True)
+    passing_score = models.PositiveIntegerField(default=70)
+    score = models.FloatField(blank=True, null=True)
+    answers = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    access_token = models.CharField(max_length=96, unique=True, blank=True, default='')
+    email_sent_at = models.DateTimeField(blank=True, null=True)
+    email_send_error = models.TextField(blank=True, default='')
+    opened_at = models.DateTimeField(blank=True, null=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    submitted_at = models.DateTimeField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Technical quiz for {self.application}"
+
+
+class OfferLetter(models.Model):
+    STATUS_DRAFT = 'DRAFT'
+    STATUS_SENT = 'SENT'
+    STATUS_ACCEPTED = 'ACCEPTED'
+    STATUS_DECLINED = 'DECLINED'
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, 'Draft'),
+        (STATUS_SENT, 'Sent'),
+        (STATUS_ACCEPTED, 'Accepted'),
+        (STATUS_DECLINED, 'Declined'),
+    ]
+
+    application = models.OneToOneField(Application, on_delete=models.CASCADE, related_name='offer_letter')
+    recruiter = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='offer_letters')
+    salary = models.CharField(max_length=255)
+    joining_date = models.DateField()
+    terms = models.TextField(blank=True, default='')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    sent_at = models.DateTimeField(blank=True, null=True)
+    responded_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Offer letter for {self.application}"
+
+
 class Notification(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='notifications')
     title = models.CharField(max_length=255)
@@ -287,3 +554,24 @@ class Message(models.Model):
 
     def __str__(self):
         return f"Message from {self.sender} in {self.conversation}"
+
+
+class AdminAuditLog(models.Model):
+    """Trail of moderation actions an admin took, so decisions (suspend, verify,
+    close a job, ...) aren't invisible once the underlying row changes again."""
+
+    admin = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name='admin_audit_actions'
+    )
+    action = models.CharField(max_length=50)
+    target_type = models.CharField(max_length=50)
+    target_id = models.PositiveIntegerField(null=True, blank=True)
+    target_label = models.CharField(max_length=255, blank=True, default='')
+    details = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.action} on {self.target_type}#{self.target_id} by {self.admin}"

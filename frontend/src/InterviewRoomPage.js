@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { JitsiMeeting } from '@jitsi/react-sdk';
-import { fetchInterviewByRoom } from './services/api';
+import { fetchInterviewByRoom, updateApplication } from './services/api';
 
 export default function InterviewRoomPage({ currentUser }) {
   const { roomId } = useParams();
@@ -9,6 +9,9 @@ export default function InterviewRoomPage({ currentUser }) {
   const [interview, setInterview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [callEnded, setCallEnded] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [selectionMessage, setSelectionMessage] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -75,6 +78,21 @@ export default function InterviewRoomPage({ currentUser }) {
 
   const roomName = interview?.room_name || roomId;
   const meetingUrl = interview?.meeting_url || interview?.meeting_link || `https://meet.jit.si/${roomName}`;
+  const isRecruiter = currentUser?.last_name === 'recruiter' || currentUser?.user_type === 'recruiter';
+
+  const selectCandidate = async () => {
+    if (!interview?.application?.id || selecting) return;
+    setSelecting(true);
+    setSelectionMessage('');
+    try {
+      await updateApplication(interview.application.id, { status: 'SELECTED' });
+      setSelectionMessage('Candidate selected successfully.');
+    } catch (err) {
+      setSelectionMessage(err.message || 'Unable to select candidate.');
+    } finally {
+      setSelecting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 px-4 py-6 text-white sm:px-6">
@@ -123,6 +141,7 @@ export default function InterviewRoomPage({ currentUser }) {
                   node.style.borderRadius = '16px';
                 }
               }}
+              onReadyToClose={() => setCallEnded(true)}
             />
           </div>
         )}
@@ -133,6 +152,18 @@ export default function InterviewRoomPage({ currentUser }) {
             {meetingUrl}
           </a>
         </div>
+        {isRecruiter && callEnded && (
+          <div className="flex flex-col gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-500/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium text-white">Interview ended</p>
+              <p className="mt-1 text-sm text-emerald-100">Record the final decision for this candidate.</p>
+            </div>
+            <button type="button" onClick={selectCandidate} disabled={selecting} className="rounded-full bg-emerald-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-400 disabled:cursor-wait disabled:opacity-60">
+              {selecting ? 'Selecting...' : 'Select candidate'}
+            </button>
+          </div>
+        )}
+        {selectionMessage && <p className="rounded-xl border border-white/10 bg-white/10 p-3 text-sm text-emerald-100">{selectionMessage}</p>}
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   BriefcaseBusiness,
   Users,
@@ -12,6 +12,10 @@ import {
   Video,
   MapPin,
   ChevronRight,
+  ShieldCheck,
+  CheckCircle2,
+  AlertCircle,
+  Mail,
 } from 'lucide-react';
 
 import EmptyState from '../../components/ui/EmptyState';
@@ -69,6 +73,127 @@ function PipelineStage({ index, total, label, value, icon: Icon, onClick }) {
   );
 }
 
+function VerificationCard({ recruiterProfile, onGoToCompanyProfile, onVerifyEmailRequest, onVerifyEmailSubmit, verifyEmailStatus }) {
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpValue, setOtpValue] = useState('');
+  const [sending, setSending] = useState(false);
+
+  if (!recruiterProfile) return null;
+
+  const {
+    profile_completion_score: completion = 0,
+    verification_score: score = 0,
+    verification_level: level = 'Unverified',
+    email_verified: emailVerified,
+    phone_verified: phoneVerified,
+    identity_verified: identityVerified,
+    company,
+  } = recruiterProfile;
+
+  const checklist = [
+    { label: 'Email verified', done: emailVerified },
+    { label: 'Phone verified', done: phoneVerified },
+    { label: 'Identity verified', done: identityVerified },
+    { label: 'Website verified', done: company?.website_verified },
+    { label: 'Registration verified', done: company?.registration_verified },
+    { label: 'Address verified', done: company?.address_verified },
+    { label: 'Logo verified', done: company?.logo_status === 'verified' },
+  ];
+
+  const levelColor = score >= 90 ? '#0E7C66' : score >= 75 ? '#0E7C66' : score >= 50 ? '#B8860B' : '#B91F1F';
+
+  const handleSendOtp = async () => {
+    setSending(true);
+    try {
+      await onVerifyEmailRequest?.();
+      setOtpSent(true);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleSubmitOtp = async (e) => {
+    e.preventDefault();
+    setSending(true);
+    try {
+      await onVerifyEmailSubmit?.(otpValue);
+      setOtpValue('');
+      setOtpSent(false);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 shadow-sm">
+      <div className="flex flex-col gap-6 p-6 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-1 flex-wrap gap-8">
+          <div>
+            <p className="text-xs text-[#5B6660] dark:text-slate-400">Company Profile</p>
+            <p className="font-data text-2xl font-semibold text-[#14181C] dark:text-slate-50">{completion}% Complete</p>
+          </div>
+          <div>
+            <p className="flex items-center gap-1.5 text-xs text-[#5B6660] dark:text-slate-400">
+              <ShieldCheck className="h-3.5 w-3.5" /> Verification Score
+            </p>
+            <p className="font-data text-2xl font-semibold" style={{ color: levelColor }}>{score} / 100</p>
+            <p className="text-xs text-[#5B6660] dark:text-slate-400">{level}</p>
+          </div>
+          <div className="min-w-[220px] flex-1">
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+              {checklist.map((item) => (
+                <span key={item.label} className="flex items-center gap-1.5 text-xs text-[#5B6660] dark:text-slate-400">
+                  {item.done ? (
+                    <CheckCircle2 className="h-3.5 w-3.5 text-[#0E7C66]" />
+                  ) : (
+                    <AlertCircle className="h-3.5 w-3.5 text-[#B8860B]" />
+                  )}
+                  {item.label}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
+          {!emailVerified && (
+            otpSent ? (
+              <form onSubmit={handleSubmitOtp} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={otpValue}
+                  onChange={(e) => setOtpValue(e.target.value)}
+                  placeholder="Enter OTP"
+                  className="w-28 border border-[#14181C]/15 dark:border-white/15 bg-[#F5F6F3] dark:bg-slate-800 px-3 py-2 text-sm outline-none focus:border-[#0E7C66]"
+                />
+                <button type="submit" disabled={sending} className="inline-flex items-center gap-1.5 rounded-full bg-[#0E7C66] px-4 py-2 text-xs font-medium text-white hover:bg-[#0B6553]">
+                  Verify
+                </button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSendOtp}
+                disabled={sending}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#14181C]/15 dark:border-white/15 bg-white dark:bg-slate-900 px-4 py-2 text-xs font-medium text-[#14181C] dark:text-slate-50 hover:border-[#0E7C66]/40"
+              >
+                <Mail className="h-3.5 w-3.5" /> {sending ? 'Sending…' : 'Verify email'}
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            onClick={onGoToCompanyProfile}
+            className="inline-flex items-center gap-1.5 rounded-full bg-[#14181C] px-4 py-2 text-xs font-medium text-white hover:bg-[#2B3339]"
+          >
+            Complete verification <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+          {verifyEmailStatus && <p className="text-xs text-[#5B6660] dark:text-slate-400">{verifyEmailStatus}</p>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function MetricChip({ icon: Icon, value, label, onClick }) {
   return (
     <button
@@ -85,7 +210,17 @@ function MetricChip({ icon: Icon, value, label, onClick }) {
   );
 }
 
-export default function RecruiterDashboardPage({ currentUser, jobs = [], applications = [], loading, onQuickAction }) {
+export default function RecruiterDashboardPage({
+  currentUser,
+  jobs = [],
+  applications = [],
+  loading,
+  onQuickAction,
+  recruiterProfile,
+  onVerifyEmailRequest,
+  onVerifyEmailSubmit,
+  verifyEmailStatus,
+}) {
   const activeJobs = jobs.filter((job) => job.status === 'ACTIVE').length;
   const totalApplications = applications.length;
   const shortlisted = applications.filter((a) => SHORTLISTED_STATUSES.includes(a.status)).length;
@@ -169,6 +304,14 @@ export default function RecruiterDashboardPage({ currentUser, jobs = [], applica
           <MetricChip icon={BriefcaseBusiness} value={activeJobs} label="active jobs" onClick={() => onQuickAction('manage-jobs')} />
           <MetricChip icon={MessageSquare} value={unreadMessages} label="unread messages" onClick={() => onQuickAction('messages')} />
         </section>
+
+        <VerificationCard
+          recruiterProfile={recruiterProfile}
+          onGoToCompanyProfile={() => onQuickAction('company-profile')}
+          onVerifyEmailRequest={onVerifyEmailRequest}
+          onVerifyEmailSubmit={onVerifyEmailSubmit}
+          verifyEmailStatus={verifyEmailStatus}
+        />
 
         {/* Main grid */}
         <section className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   BriefcaseBusiness,
   Users,
@@ -16,6 +16,7 @@ import {
 
 import EmptyState from '../../components/ui/EmptyState';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import { compareCandidates } from '../../services/api';
 
 /*
   Optional but recommended: load these two fonts once in your root HTML
@@ -93,6 +94,15 @@ function ArrivalMarker() {
 }
 
 export default function RecruiterApplicationsPage({ jobs = [], applications = [], loading, onQuickAction, onViewProfile, onShortlist, onReject, onSchedule }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [stageFilter, setStageFilter] = useState('ALL');
+  const [minimumScore, setMinimumScore] = useState('');
+  const [skillsFilter, setSkillsFilter] = useState('');
+  const [workModeFilter, setWorkModeFilter] = useState('ALL');
+  const [interviewFilter, setInterviewFilter] = useState('ALL');
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState([]);
+  const [comparison, setComparison] = useState([]);
+  const [comparisonError, setComparisonError] = useState('');
   const activeJobs = jobs.filter((job) => job.status === 'ACTIVE').length;
   const totalApplications = applications.length;
   const shortlisted = applications.filter((a) => SHORTLISTED_STATUSES.includes(a.status)).length;
@@ -100,7 +110,35 @@ export default function RecruiterApplicationsPage({ jobs = [], applications = []
   const selectedCandidates = applications.filter((a) => ['SELECTED', 'JOINED'].includes(a.status)).length;
   const unreadMessages = applications.reduce((t, a) => t + Number(a.unread_message_count || 0), 0);
 
-  const recentApplications = [...applications]
+  const filteredApplications = useMemo(() => applications.filter((application) => {
+    const search = searchTerm.trim().toLowerCase();
+    const matchesSearch = !search || [application.applicant_name, application.applicant_email, application.job_title, application.job_company]
+      .filter(Boolean).some((value) => value.toLowerCase().includes(search));
+    const matchesScore = !minimumScore || Number(application.ai_match_score || 0) >= Number(minimumScore);
+    const requiredSkills = skillsFilter.split(',').map((skill) => skill.trim().toLowerCase()).filter(Boolean);
+    const candidateSkills = `${application.skills || ''} ${(application.ai_matched_skills || []).join(' ')}`.toLowerCase();
+    const matchesSkills = requiredSkills.every((skill) => candidateSkills.includes(skill));
+    const matchesWorkMode = workModeFilter === 'ALL' || application.job_work_mode === workModeFilter;
+    const hasInterview = (application.interviews || []).length > 0;
+    const matchesInterview = interviewFilter === 'ALL' || (interviewFilter === 'SCHEDULED' ? hasInterview : !hasInterview);
+    return matchesSearch
+      && (stageFilter === 'ALL' || application.status === stageFilter)
+      && matchesScore
+      && matchesSkills
+      && matchesWorkMode
+      && matchesInterview;
+  }), [applications, searchTerm, stageFilter, minimumScore, skillsFilter, workModeFilter, interviewFilter]);
+
+  const handleCompare = async () => {
+    setComparisonError('');
+    try {
+      setComparison(await compareCandidates(selectedCandidateIds));
+    } catch (error) {
+      setComparisonError(error.message);
+    }
+  };
+
+  const recentApplications = [...filteredApplications]
     .sort((a, b) => new Date(b.applied_at || 0) - new Date(a.applied_at || 0))
     .slice(0, 5);
 
@@ -193,6 +231,59 @@ export default function RecruiterApplicationsPage({ jobs = [], applications = []
           </button>
         </section>
 
+        <section className="recruiter-filter-bar">
+          <div className="recruiter-filter-search"><span>⌕</span><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search candidates, jobs or email" /></div>
+          <input value={minimumScore} onChange={(event) => setMinimumScore(event.target.value)} type="number" min="0" max="100" placeholder="Min score" aria-label="Minimum resume score" />
+          <input value={skillsFilter} onChange={(event) => setSkillsFilter(event.target.value)} placeholder="Skills: React, Python" aria-label="Filter by skills" />
+          <select value={workModeFilter} onChange={(event) => setWorkModeFilter(event.target.value)} aria-label="Filter by work mode">
+            <option value="ALL">All work modes</option>
+            <option value="Remote">Remote</option>
+            <option value="Hybrid">Hybrid</option>
+            <option value="On-site">On-site</option>
+          </select>
+          <select value={interviewFilter} onChange={(event) => setInterviewFilter(event.target.value)} aria-label="Filter by interview status">
+            <option value="ALL">All interview states</option>
+            <option value="SCHEDULED">Interview scheduled</option>
+            <option value="NONE">No interview</option>
+          </select>
+          <select value={stageFilter} onChange={(event) => setStageFilter(event.target.value)} aria-label="Filter candidates by stage">
+            <option value="ALL">All stages</option>
+            <option value="RESUME_SHORTLISTED">Resume shortlisted</option>
+            <option value="QUIZ_SCHEDULED">Quiz scheduled</option>
+            <option value="QUIZ_COMPLETED">Quiz completed</option>
+            <option value="QUIZ_PASSED">Quiz passed</option>
+            <option value="INTERVIEW_SCHEDULED">Interview scheduled</option>
+            <option value="SELECTED">Selected</option>
+            <option value="REJECTED">Rejected</option>
+          </select>
+          <span className="recruiter-filter-count">{filteredApplications.length} candidate{filteredApplications.length === 1 ? '' : 's'}</span>
+        </section>
+
+        <section className="rounded-2xl border border-[#14181C]/10 dark:border-white/10 bg-white dark:bg-slate-900 p-5 shadow-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <label htmlFor="compare-candidates" className="text-sm font-medium">Compare candidates</label>
+            <select
+              id="compare-candidates"
+              multiple
+              value={selectedCandidateIds.map(String)}
+              onChange={(event) => setSelectedCandidateIds(Array.from(event.target.selectedOptions).map((option) => Number(option.value)).slice(0, 6))}
+              className="min-w-[250px] rounded-lg border border-[#14181C]/15 bg-white px-3 py-2 text-sm dark:bg-slate-800"
+            >
+              {filteredApplications.map((application) => <option key={application.id} value={application.id}>{application.applicant_name || application.applicant_email || `Candidate ${application.id}`}</option>)}
+            </select>
+            <button type="button" disabled={!selectedCandidateIds.length} onClick={handleCompare} className="rounded-full bg-[#0E7C66] px-4 py-2 text-sm font-medium text-white disabled:opacity-50">Compare selected</button>
+          </div>
+          {comparisonError && <p className="mt-3 text-sm text-red-700">{comparisonError}</p>}
+          {comparison.length > 0 && (
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead><tr className="border-b border-[#14181C]/10 dark:border-white/10"><th className="px-2 py-2">Candidate</th><th className="px-2 py-2">Match score</th><th className="px-2 py-2">Skills</th><th className="px-2 py-2">Status</th></tr></thead>
+                <tbody>{comparison.map((candidate) => <tr key={candidate.id} className="border-b border-[#14181C]/8 dark:border-white/8"><td className="px-2 py-2">{candidate.applicant_name || candidate.applicant_email}</td><td className="px-2 py-2">{candidate.ai_match_score ?? 'N/A'}%</td><td className="px-2 py-2">{candidate.skills || 'Not provided'}</td><td className="px-2 py-2">{candidate.status}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
         {/* Main grid */}
         <section className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
 
@@ -207,6 +298,7 @@ export default function RecruiterApplicationsPage({ jobs = [], applications = []
                 View all <ChevronRight className="h-4 w-4" />
               </button>
             </div>
+            {searchTerm || stageFilter !== 'ALL' ? <div className="recruiter-filter-result">Showing filtered candidates from the hiring pipeline.</div> : null}
 
             {recentApplications.length === 0 ? (
               <div className="p-8">
