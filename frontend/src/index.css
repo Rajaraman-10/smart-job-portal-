@@ -20,8 +20,57 @@ body {
 }
 
 body[data-theme='dark'] {
-  background: #020617;
+  background: #000000;
   color: #f8fafc;
+}
+
+/* Fallback theme layer for recruiter surfaces. This keeps the full workspace
+   consistent even when utility-class ordering is affected by cached builds. */
+.recruiter-theme-dark,
+.recruiter-theme-dark main {
+  background-color: #000000 !important;
+  color: #f8fafc !important;
+}
+
+.recruiter-theme-dark aside,
+.recruiter-theme-dark header,
+.recruiter-theme-dark main section,
+.recruiter-theme-dark main article,
+.recruiter-theme-dark main [class*='bg-white'],
+.recruiter-theme-dark main [class*='bg-\[#F5F6F3\]'],
+.recruiter-theme-dark [class*='bg-[#111918]'],
+.recruiter-theme-dark [class*='bg-[#0A100F]'] {
+  background-color: #050505 !important;
+  color: #f8fafc !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.recruiter-theme-dark main input,
+.recruiter-theme-dark main select,
+.recruiter-theme-dark main textarea,
+.recruiter-theme-dark aside button,
+.recruiter-theme-dark aside a {
+  color: #e2e8f0 !important;
+}
+
+.recruiter-theme-dark main input,
+.recruiter-theme-dark main select,
+.recruiter-theme-dark main textarea {
+  background-color: #0d0d0d !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.recruiter-theme-dark main [class*='text-\[#14181C\]'],
+.recruiter-theme-dark main [class*='text-slate-900'],
+.recruiter-theme-dark aside [class*='text-\[#14181C\]'] {
+  color: #f8fafc !important;
+}
+
+.recruiter-theme-dark main [class*='text-\[#5B6660\]'],
+.recruiter-theme-dark main [class*='text-slate-500'],
+.recruiter-theme-dark main [class*='text-slate-600'],
+.recruiter-theme-dark aside [class*='text-\[#5B6660\]'] {
+  color: #94a3b8 !important;
 }
 
 h1, h2, h3, h4, h5, h6 {

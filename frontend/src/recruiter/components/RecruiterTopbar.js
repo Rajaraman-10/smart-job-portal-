@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Bell,
   Search,
@@ -22,6 +23,7 @@ export default function RecruiterTopbar({
   const [profileOpen, setProfileOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const navigate = useNavigate();
 
   const isDark = theme === "dark";
 
@@ -571,12 +573,20 @@ export default function RecruiterTopbar({
                     isDark={isDark}
                     icon={User}
                     label="My Profile"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      navigate('/recruiter/company-profile');
+                    }}
                   />
 
                   <DropdownItem
                     isDark={isDark}
                     icon={Settings}
                     label="Settings"
+                    onClick={() => {
+                      setProfileOpen(false);
+                      navigate('/recruiter/settings');
+                    }}
                   />
                 </div>
 
@@ -593,7 +603,10 @@ export default function RecruiterTopbar({
                 >
                   <button
                     type="button"
-                    onClick={onLogout}
+                    onClick={() => {
+                      setProfileOpen(false);
+                      onLogout?.();
+                    }}
                     className={`
                       flex w-full items-center gap-3
                       rounded-xl px-3 py-2.5
@@ -704,10 +717,12 @@ function DropdownItem({
   isDark,
   icon: Icon,
   label,
+  onClick,
 }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       className={`
         flex w-full items-center gap-3
         rounded-xl px-3 py-2.5
